@@ -1,0 +1,47 @@
+[tool.poetry]
+name = "fm-case-service"
+version = "1.0.0"
+description = "FaultMaven Case Management Microservice - Phase 3"
+authors = ["FaultMaven Team"]
+readme = "README.md"
+packages = [{include = "case_service", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+python-dotenv = "^1.0.0"
+sqlalchemy = {extras = ["asyncio"], version = "^2.0.25"}
+aiosqlite = "^0.19.0"
+alembic = "^1.13.1"
+# asyncpg = "^0.29.0"  # For PostgreSQL - add when needed
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.0"
+pytest-cov = "^4.1.0"
+black = "^23.10.0"
+flake8 = "^6.1.0"
+mypy = "^1.6.0"
+httpx = "^0.25.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"

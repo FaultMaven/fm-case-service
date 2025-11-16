@@ -15,8 +15,8 @@ pydantic-settings = "^2.1.0"
 python-dotenv = "^1.0.0"
 sqlalchemy = {extras = ["asyncio"], version = "^2.0.25"}
 aiosqlite = "^0.19.0"
-alembic = "^1.13.1"
-# asyncpg = "^0.29.0"  # For PostgreSQL - add when needed
+# Migrations: Tables auto-created on startup for simplicity
+# asyncpg removed - PUBLIC version uses SQLite only
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

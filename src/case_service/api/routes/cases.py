@@ -55,7 +55,76 @@ async def get_user_id(x_user_id: Optional[str] = Header(None)) -> str:
     return x_user_id
 
 
-@router.post("", response_model=CaseResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=CaseResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create new troubleshooting case",
+    description="""
+Creates a new troubleshooting case for the authenticated user.
+
+**Workflow**:
+1. Case created in 'active' status with auto-generated ID (case_XXXX format)
+2. Title auto-generated if not provided (Case-MMDD-N format)
+3. Optional session linking for associating with investigation sessions
+4. User can specify severity, category, metadata, and tags
+
+**Request Body Example**:
+```json
+{
+  "title": "Redis connection timeouts in production",
+  "description": "Intermittent timeouts on Redis cluster during peak hours",
+  "severity": "high",
+  "category": "performance",
+  "session_id": "session_abc123",
+  "metadata": {"environment": "production", "cluster": "redis-prod-1"},
+  "tags": ["redis", "timeout", "performance"]
+}
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_a1b2c3d4e5f6",
+  "user_id": "user_123",
+  "session_id": "session_abc123",
+  "title": "Redis connection timeouts in production",
+  "description": "Intermittent timeouts on Redis cluster during peak hours",
+  "status": "active",
+  "severity": "high",
+  "category": "performance",
+  "metadata": {"environment": "production", "cluster": "redis-prod-1"},
+  "tags": ["redis", "timeout", "performance"],
+  "created_at": "2025-11-19T10:30:00Z",
+  "updated_at": "2025-11-19T10:30:00Z",
+  "resolved_at": null
+}
+```
+
+**Storage**: SQLite database (fm_cases.db) with user_id indexing
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header from fm-api-gateway
+**User Isolation**: Cases are strictly scoped to the creating user
+    """,
+    responses={
+        201: {
+            "description": "Case created successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "case_id": "case_a1b2c3d4e5f6",
+                        "user_id": "user_123",
+                        "status": "active",
+                        "created_at": "2025-11-19T10:30:00Z"
+                    }
+                }
+            }
+        },
+        400: {"description": "Invalid request data (validation error)"},
+        401: {"description": "Unauthorized - missing or invalid X-User-ID header"},
+        500: {"description": "Internal server error - database operation failed"}
+    }
+)
 async def create_case(
     request: CaseCreateRequest,
     user_id: str = Depends(get_user_id),
@@ -69,7 +138,55 @@ async def create_case(
     return CaseResponse.from_case(case)
 
 
-@router.get("/{case_id}", response_model=CaseResponse)
+@router.get(
+    "/{case_id}",
+    response_model=CaseResponse,
+    summary="Get case by ID",
+    description="""
+Retrieves a single case by its unique case_id.
+
+**Access Control**:
+- Users can only access their own cases
+- Attempting to access another user's case returns 404 (not 403) to prevent enumeration
+- Case ID must be exact match (case-sensitive)
+
+**Request Example**:
+```
+GET /api/v1/cases/case_a1b2c3d4e5f6
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_a1b2c3d4e5f6",
+  "user_id": "user_123",
+  "session_id": "session_abc123",
+  "title": "Redis connection timeouts in production",
+  "description": "Intermittent timeouts on Redis cluster during peak hours",
+  "status": "investigating",
+  "severity": "high",
+  "category": "performance",
+  "metadata": {"environment": "production"},
+  "tags": ["redis", "timeout"],
+  "created_at": "2025-11-19T10:30:00Z",
+  "updated_at": "2025-11-19T11:15:00Z",
+  "resolved_at": null
+}
+```
+
+**Storage**: Retrieved from SQLite with user_id filter
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Enforced at database query level
+    """,
+    responses={
+        200: {"description": "Case found and returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        404: {"description": "Case not found or access denied (returns 404 to prevent enumeration)"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_case(
     case_id: str,
     user_id: str = Depends(get_user_id),
@@ -90,7 +207,62 @@ async def get_case(
     return CaseResponse.from_case(case)
 
 
-@router.put("/{case_id}", response_model=CaseResponse)
+@router.put(
+    "/{case_id}",
+    response_model=CaseResponse,
+    summary="Update case details",
+    description="""
+Updates an existing case with new information. All fields are optional.
+
+**Updatable Fields**:
+- `title`: Case title (max 200 characters)
+- `description`: Detailed description
+- `status`: Case status (active/investigating/resolved/archived/closed)
+- `severity`: Severity level (low/medium/high/critical)
+- `category`: Category (performance/error/configuration/infrastructure/security/other)
+- `metadata`: Custom metadata dictionary (merged with existing)
+- `tags`: Tag list (replaces existing tags)
+
+**Request Example**:
+```json
+{
+  "status": "investigating",
+  "severity": "critical",
+  "description": "Issue escalated - affecting 50% of users",
+  "metadata": {"escalated": true, "affected_users": 500},
+  "tags": ["redis", "timeout", "critical", "escalated"]
+}
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_a1b2c3d4e5f6",
+  "status": "investigating",
+  "severity": "critical",
+  "updated_at": "2025-11-19T12:30:00Z",
+  ...
+}
+```
+
+**Behavior**:
+- Only provided fields are updated (partial updates supported)
+- `updated_at` timestamp automatically updated
+- `resolved_at` set automatically when status changes to 'resolved'
+- Users can only update their own cases
+
+**Storage**: SQLite update with optimistic locking
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Update only succeeds if case belongs to user
+    """,
+    responses={
+        200: {"description": "Case updated successfully"},
+        400: {"description": "Invalid request data"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def update_case(
     case_id: str,
     request: CaseUpdateRequest,
@@ -112,7 +284,51 @@ async def update_case(
     return CaseResponse.from_case(case)
 
 
-@router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{case_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete case permanently",
+    description="""
+Permanently deletes a case from the database.
+
+**WARNING**: This operation is irreversible. The case and all associated data will be permanently deleted.
+
+**Request Example**:
+```
+DELETE /api/v1/cases/case_a1b2c3d4e5f6
+Headers:
+  X-User-ID: user_123
+```
+
+**Response**:
+```
+204 No Content (success, no body returned)
+404 Not Found (case doesn't exist or access denied)
+```
+
+**Behavior**:
+- Case is permanently removed from database
+- Session associations are not affected (sessions remain)
+- Users can only delete their own cases
+- No soft-delete or archival (use status='archived' instead if you want to preserve data)
+
+**Recommended Alternative**: Consider updating status to 'archived' or 'closed' instead of deletion to preserve historical data:
+```
+PUT /api/v1/cases/{case_id}
+{"status": "archived"}
+```
+
+**Storage**: Hard delete from SQLite
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Delete only succeeds if case belongs to user
+    """,
+    responses={
+        204: {"description": "Case deleted successfully (no content returned)"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def delete_case(
     case_id: str,
     user_id: str = Depends(get_user_id),
@@ -131,7 +347,70 @@ async def delete_case(
         )
 
 
-@router.get("", response_model=CaseListResponse)
+@router.get(
+    "",
+    response_model=CaseListResponse,
+    summary="List user's cases with pagination",
+    description="""
+Retrieves a paginated list of cases for the authenticated user.
+
+**Query Parameters**:
+- `status` (optional): Filter by status (active/investigating/resolved/archived/closed)
+- `page` (default: 1): Page number (1-indexed)
+- `page_size` (default: 50, max: 100): Number of cases per page
+
+**Request Example**:
+```
+GET /api/v1/cases?status=investigating&page=1&page_size=20
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "cases": [
+    {
+      "case_id": "case_a1b2c3d4e5f6",
+      "title": "Redis timeout issue",
+      "status": "investigating",
+      "severity": "high",
+      "created_at": "2025-11-19T10:30:00Z",
+      ...
+    },
+    {
+      "case_id": "case_x7y8z9a0b1c2",
+      "title": "API latency spike",
+      "status": "investigating",
+      "severity": "medium",
+      "created_at": "2025-11-18T14:20:00Z",
+      ...
+    }
+  ],
+  "total": 15,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+**Pagination Calculation**:
+- `total`: Total number of cases matching filter
+- `total_pages`: ceil(total / page_size)
+- Use `page` and `page_size` to navigate through results
+
+**Sorting**: Cases returned in reverse chronological order (newest first)
+
+**Storage**: Indexed query on user_id and status
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only returns cases belonging to authenticated user
+    """,
+    responses={
+        200: {"description": "List of cases returned successfully"},
+        400: {"description": "Invalid query parameters (e.g., page < 1 or page_size > 100)"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def list_cases(
     status_filter: Optional[CaseStatus] = Query(None, alias="status"),
     page: int = Query(1, ge=1),
@@ -158,7 +437,65 @@ async def list_cases(
     )
 
 
-@router.get("/session/{session_id}", response_model=CaseListResponse)
+@router.get(
+    "/session/{session_id}",
+    response_model=CaseListResponse,
+    summary="Get cases linked to a session",
+    description="""
+Retrieves all cases associated with a specific investigation session.
+
+**Use Case**: When viewing an investigation session from fm-session-service, this endpoint shows all related troubleshooting cases.
+
+**Query Parameters**:
+- `page` (default: 1): Page number (1-indexed)
+- `page_size` (default: 50, max: 100): Number of cases per page
+
+**Request Example**:
+```
+GET /api/v1/cases/session/session_abc123?page=1&page_size=10
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "cases": [
+    {
+      "case_id": "case_a1b2c3d4e5f6",
+      "session_id": "session_abc123",
+      "title": "Database performance investigation",
+      "status": "investigating",
+      ...
+    }
+  ],
+  "total": 3,
+  "page": 1,
+  "page_size": 10
+}
+```
+
+**Access Control**:
+- Returns only cases that belong to the authenticated user
+- Even if a session has cases from multiple users, only the current user's cases are returned
+- This prevents cross-user data leakage in shared session contexts
+
+**Cross-Service Integration**:
+- `session_id` comes from fm-session-service
+- No validation that session exists (loose coupling)
+- Session access control handled by fm-session-service
+
+**Storage**: Query on session_id with user_id filter
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Filtered to authenticated user's cases only
+    """,
+    responses={
+        200: {"description": "List of cases for session returned successfully (may be empty)"},
+        400: {"description": "Invalid query parameters"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_cases_for_session(
     session_id: str,
     page: int = Query(1, ge=1),
@@ -189,7 +526,70 @@ async def get_cases_for_session(
     )
 
 
-@router.post("/{case_id}/status", response_model=CaseResponse)
+@router.post(
+    "/{case_id}/status",
+    response_model=CaseResponse,
+    summary="Update case status",
+    description="""
+Updates only the status field of a case (convenience endpoint).
+
+**Status Transitions**:
+```
+active → investigating → resolved
+         ↓
+      archived
+         ↓
+      closed
+```
+
+**Common Workflows**:
+- **Start Investigation**: active → investigating
+- **Resolve Issue**: investigating → resolved
+- **Archive Old Case**: resolved → archived
+- **Close Without Resolution**: investigating → closed
+
+**Request Example**:
+```json
+{
+  "status": "resolved"
+}
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_a1b2c3d4e5f6",
+  "status": "resolved",
+  "resolved_at": "2025-11-19T15:30:00Z",
+  "updated_at": "2025-11-19T15:30:00Z",
+  ...
+}
+```
+
+**Automatic Timestamp Handling**:
+- `updated_at`: Always updated to current timestamp
+- `resolved_at`: Automatically set when status changes to 'resolved'
+- `resolved_at`: Cleared if status changes away from 'resolved'
+
+**Use Cases**:
+- Workflow automation (e.g., auto-resolve when all tests pass)
+- Status boards and dashboards
+- Case lifecycle tracking
+
+**Alternative**: You can also update status via `PUT /api/v1/cases/{case_id}` with `{"status": "resolved"}`, but this endpoint provides clearer semantics for status-only updates.
+
+**Storage**: SQLite update with timestamp management
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Update only succeeds if case belongs to user
+    """,
+    responses={
+        200: {"description": "Case status updated successfully"},
+        400: {"description": "Invalid status value"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def update_case_status(
     case_id: str,
     request: CaseStatusUpdateRequest,

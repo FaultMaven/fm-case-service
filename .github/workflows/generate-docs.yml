@@ -1,0 +1,140 @@
+name: Generate Documentation
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  generate-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better git operations
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyyaml
+
+      - name: Generate OpenAPI Specification
+        run: |
+          python -c "
+          from case_service.main import app
+          import json
+          import yaml
+          import os
+
+          # Generate OpenAPI spec
+          spec = app.openapi()
+
+          # Create docs directory
+          os.makedirs('docs/api', exist_ok=True)
+
+          # Write JSON spec
+          with open('docs/api/openapi.json', 'w') as f:
+              json.dump(spec, f, indent=2)
+
+          # Write YAML spec
+          with open('docs/api/openapi.yaml', 'w') as f:
+              yaml.dump(spec, f, default_flow_style=False, sort_keys=False)
+
+          print('✅ OpenAPI specification generated')
+          print(f'  - docs/api/openapi.json ({os.path.getsize(\"docs/api/openapi.json\")} bytes)')
+          print(f'  - docs/api/openapi.yaml ({os.path.getsize(\"docs/api/openapi.yaml\")} bytes)')
+          "
+
+      - name: Validate Documentation Completeness
+        run: |
+          python -c "
+          from case_service.main import app
+          import sys
+
+          spec = app.openapi()
+          incomplete = []
+          endpoints_checked = 0
+
+          # Check all endpoints for required documentation
+          for path, methods in spec.get('paths', {}).items():
+              for method, details in methods.items():
+                  if method.lower() in ['get', 'post', 'put', 'delete', 'patch']:
+                      endpoints_checked += 1
+
+                      # Check for description
+                      if not details.get('description') or details.get('description').strip() == '':
+                          incomplete.append(f'{method.upper()} {path} - missing description')
+
+                      # Check for summary
+                      if not details.get('summary') or details.get('summary').strip() == '':
+                          incomplete.append(f'{method.upper()} {path} - missing summary')
+
+                      # Check for responses
+                      if not details.get('responses') or len(details.get('responses', {})) == 0:
+                          incomplete.append(f'{method.upper()} {path} - missing responses')
+
+          print(f'📊 Documentation Validation Report')
+          print(f'  Total endpoints checked: {endpoints_checked}')
+
+          if incomplete:
+              print(f'  ❌ Incomplete documentation: {len(incomplete)} issue(s)')
+              print()
+              print('Issues found:')
+              for item in incomplete:
+                  print(f'  - {item}')
+              sys.exit(1)
+          else:
+              print(f'  ✅ All {endpoints_checked} endpoints fully documented')
+          "
+
+      - name: Generate README
+        run: |
+          python scripts/generate_readme.py
+          echo "✅ README.md generated"
+
+      - name: Check for documentation changes
+        id: check_changes
+        run: |
+          git add docs/api/*.json docs/api/*.yaml README.md
+          if git diff --staged --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "📝 No documentation changes detected"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "📝 Documentation changes detected"
+            git diff --staged --stat
+          fi
+
+      - name: Commit and push documentation
+        if: |
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "docs: Auto-generate API documentation [skip ci]
+
+          - Updated OpenAPI specification (JSON + YAML)
+          - Regenerated README.md from code
+          - Documentation timestamp: $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload OpenAPI spec as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: openapi-spec
+          path: docs/api/
+          retention-days: 30

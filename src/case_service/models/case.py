@@ -1,8 +1,6 @@
 """Case data models for fm-case-service.
 
 Simplified version of FaultMaven case models for microservice deployment.
-
-This module defines the core case models used across the case management service.
 """
 
 from datetime import datetime, timezone
@@ -14,10 +12,7 @@ from pydantic import BaseModel, Field
 
 
 class CaseStatus(str, Enum):
-    """Case lifecycle status.
-
-    Represents the current state of a troubleshooting case.
-    """
+    """Case lifecycle status."""
 
     ACTIVE = "active"
     INVESTIGATING = "investigating"

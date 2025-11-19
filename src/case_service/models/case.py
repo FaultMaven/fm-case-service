@@ -14,7 +14,10 @@ from pydantic import BaseModel, Field
 
 
 class CaseStatus(str, Enum):
-    """Case lifecycle status."""
+    """Case lifecycle status.
+
+    Represents the current state of a troubleshooting case.
+    """
 
     ACTIVE = "active"
     INVESTIGATING = "investigating"

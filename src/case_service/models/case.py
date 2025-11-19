@@ -1,6 +1,8 @@
 """Case data models for fm-case-service.
 
 Simplified version of FaultMaven case models for microservice deployment.
+
+This module defines the core case models used across the case management service.
 """
 
 from datetime import datetime, timezone

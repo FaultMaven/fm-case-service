@@ -165,8 +165,7 @@ jobs:
             --head "${{ steps.sync_branch.outputs.branch }}" \
             --base main \
             --title "🔄 Sync from public repository" \
-            --body "$PR_BODY" \
-            --label "sync,automation,needs-review"
+            --body "$PR_BODY"
 
       - name: Summary
         run: |

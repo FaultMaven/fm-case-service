@@ -85,7 +85,7 @@ jobs:
             git status --short
           fi
 
-      - name: Commit changes
+      - name: Commit and push changes
         if: steps.sync_changes.outputs.has_changes == 'true'
         run: |
           cd enterprise
@@ -104,83 +104,77 @@ jobs:
           🔄 Auto-synced from public repo
           📅 Sync timestamp: $(date -u +'%Y-%m-%d %H:%M UTC')
 
-          **Review Notes:**
+          Review Notes:
           - Auto-accepted: models/, routes/, tests/
           - Please review: main.py, requirements.txt if changed
           - Protected: README.md, enterprise-only configs"
 
-      - name: Push sync branch
-        if: steps.sync_changes.outputs.has_changes == 'true'
-        run: |
-          cd enterprise
           git push origin ${{ steps.sync_branch.outputs.branch }}
 
       - name: Create Pull Request
         if: steps.sync_changes.outputs.has_changes == 'true'
-        uses: peter-evans/create-pull-request@v5
-        with:
-          token: ${{ secrets.ENTERPRISE_SYNC_TOKEN }}
-          path: enterprise
-          branch: ${{ steps.sync_branch.outputs.branch }}
-          base: main
-          title: "🔄 Sync from public repository"
-          body: |
-            ## 🔄 Automated Public → Enterprise Sync
+        env:
+          GH_TOKEN: ${{ secrets.ENTERPRISE_SYNC_TOKEN }}
+        run: |
+          cd enterprise
 
-            This PR syncs changes from the public repository to enterprise.
+          # Create PR body
+          PR_BODY=$(cat <<'EOF'
+          ## 🔄 Automated Public → Enterprise Sync
 
-            ### 📊 Sync Details
-            - **Source**: [fm-case-service](https://github.com/FaultMaven/fm-case-service)
-            - **Timestamp**: ${{ github.event.head_commit.timestamp }}
-            - **Trigger**: Public repo push to main
+          This PR syncs changes from the public repository to enterprise.
 
-            ### ✅ Auto-Accepted Changes
-            Files in these directories are automatically merged:
-            - `src/case_service/models/` - Data models
-            - `src/case_service/api/routes/` - API endpoints
-            - `tests/` - Test files
+          ### 📊 Sync Details
+          - **Source**: [fm-case-service](https://github.com/FaultMaven/fm-case-service)
+          - **Timestamp**: ${{ github.event.head_commit.timestamp }}
+          - **Trigger**: Public repo push to main
 
-            ### ⚠️ Manual Review Required
-            Please carefully review changes to:
-            - `src/case_service/main.py` - May affect enterprise initialization
-            - `requirements.txt` / `pyproject.toml` - Dependency changes
-            - `.github/workflows/` - CI/CD configurations
+          ### ✅ Auto-Accepted Changes
+          Files in these directories are automatically merged:
+          - `src/case_service/models/` - Data models
+          - `src/case_service/api/routes/` - API endpoints
+          - `tests/` - Test files
 
-            ### 🔒 Protected Files (Not Modified)
-            These files are never overwritten:
-            - `README.md` - Enterprise-specific documentation
-            - Enterprise-only configuration files
+          ### ⚠️ Manual Review Required
+          Please carefully review changes to:
+          - `src/case_service/main.py` - May affect enterprise initialization
+          - `requirements.txt` / `pyproject.toml` - Dependency changes
+          - `.github/workflows/` - CI/CD configurations
 
-            ### 🚀 Testing Checklist
-            - [ ] Unit tests pass
-            - [ ] Integration tests pass
-            - [ ] Enterprise-specific features still work
-            - [ ] Multi-tenancy isolation verified
-            - [ ] No proprietary IP leaked to public
+          ### 🔒 Protected Files (Not Modified)
+          These files are never overwritten:
+          - `README.md` - Enterprise-specific documentation
+          - Enterprise-only configuration files
 
-            ---
+          ### 🚀 Testing Checklist
+          - [ ] Unit tests pass
+          - [ ] Integration tests pass
+          - [ ] Enterprise-specific features still work
+          - [ ] Multi-tenancy isolation verified
+          - [ ] No proprietary IP leaked to public
 
-            🤖 This PR was automatically created by the sync workflow.
+          ---
 
-            **Recent public commits included:**
-            ```
-            ${{ github.event.head_commit.message }}
-            ```
-          labels: |
-            sync
-            automation
-            needs-review
-          draft: false
+          🤖 This PR was automatically created by the sync workflow.
+          EOF
+          )
+
+          # Create PR using gh CLI
+          gh pr create \
+            --repo FaultMaven/fm-case-service-enterprise \
+            --head "${{ steps.sync_branch.outputs.branch }}" \
+            --base main \
+            --title "🔄 Sync from public repository" \
+            --body "$PR_BODY" \
+            --label "sync,automation,needs-review"
 
       - name: Summary
-        if: steps.sync_changes.outputs.has_changes == 'true'
         run: |
-          echo "✅ Sync PR created successfully"
-          echo "Branch: ${{ steps.sync_branch.outputs.branch }}"
-          echo "Review the PR at: https://github.com/FaultMaven/fm-case-service-enterprise/pulls"
-
-      - name: No changes summary
-        if: steps.sync_changes.outputs.has_changes == 'false'
-        run: |
-          echo "✅ Repositories are already in sync"
-          echo "No action needed"
+          if [ "${{ steps.sync_changes.outputs.has_changes }}" == "true" ]; then
+            echo "✅ Sync PR created successfully"
+            echo "Branch: ${{ steps.sync_branch.outputs.branch }}"
+            echo "Review the PR at: https://github.com/FaultMaven/fm-case-service-enterprise/pulls"
+          else
+            echo "✅ Repositories are already in sync"
+            echo "No action needed"
+          fi

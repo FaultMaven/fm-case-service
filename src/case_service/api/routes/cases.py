@@ -620,3 +620,83 @@ async def update_case_status(
         )
 
     return CaseResponse.from_case(case)
+
+
+# =============================================================================
+# Evidence & Data Endpoints (Phase 4)
+# =============================================================================
+
+@router.post(
+    "/{case_id}/data",
+    response_model=CaseResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Add evidence/data to case",
+)
+async def add_case_data(
+    case_id: str,
+    evidence_data: dict,
+    user_id: str = Depends(get_user_id),
+    case_manager: CaseManager = Depends(get_case_manager),
+):
+    """Add evidence/data to a case."""
+    case = await case_manager.add_evidence(case_id, user_id, evidence_data)
+    if not case:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Case {case_id} not found")
+    return CaseResponse.from_case(case)
+
+
+@router.get("/{case_id}/evidence/{evidence_id}", summary="Get specific evidence by ID")
+async def get_case_evidence(
+    case_id: str,
+    evidence_id: str,
+    user_id: str = Depends(get_user_id),
+    case_manager: CaseManager = Depends(get_case_manager),
+):
+    """Get specific evidence from a case."""
+    evidence = await case_manager.get_evidence(case_id, evidence_id, user_id)
+    if not evidence:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Evidence {evidence_id} not found")
+    return evidence
+
+
+@router.get("/{case_id}/uploaded-files", summary="Get uploaded files for case")
+async def get_uploaded_files(
+    case_id: str,
+    user_id: str = Depends(get_user_id),
+    case_manager: CaseManager = Depends(get_case_manager),
+):
+    """Get uploaded files for a case."""
+    files = await case_manager.get_uploaded_files(case_id, user_id)
+    if files is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Case {case_id} not found")
+    return {"files": files, "total": len(files)}
+
+
+@router.post("/{case_id}/close", response_model=CaseResponse, summary="Close a case")
+async def close_case(
+    case_id: str,
+    close_data: Optional[dict] = None,
+    user_id: str = Depends(get_user_id),
+    case_manager: CaseManager = Depends(get_case_manager),
+):
+    """Close a case."""
+    case = await case_manager.close_case(case_id, user_id, close_data)
+    if not case:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Case {case_id} not found")
+    return CaseResponse.from_case(case)
+
+
+@router.post("/search", response_model=CaseListResponse, summary="Search cases")
+async def search_cases(
+    search_params: dict,
+    user_id: str = Depends(get_user_id),
+    case_manager: CaseManager = Depends(get_case_manager),
+):
+    """Search cases with filters."""
+    cases, total = await case_manager.search_cases(user_id, search_params)
+    return CaseListResponse(
+        cases=[CaseResponse.from_case(case) for case in cases],
+        total=total,
+        page=1,
+        page_size=len(cases),
+    )

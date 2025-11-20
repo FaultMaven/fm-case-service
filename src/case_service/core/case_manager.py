@@ -239,3 +239,107 @@ class CaseManager:
             pass
 
         return session_cases
+
+    # =========================================================================
+    # Phase 4: Evidence and Data Management
+    # =========================================================================
+
+    async def add_evidence(
+        self, case_id: str, user_id: str, evidence_data: dict
+    ) -> Optional[Case]:
+        """Add evidence to a case."""
+        case = await self.repository.get(case_id)
+        if not case or case.user_id != user_id:
+            return None
+
+        # Create evidence object from dict and append to case
+        from fm_core_lib.models import Evidence
+        from datetime import datetime, timezone
+        from uuid import uuid4
+
+        evidence = Evidence(
+            evidence_id=f"evidence_{uuid4().hex[:12]}",
+            content=evidence_data.get("content", ""),
+            source=evidence_data.get("source", "user"),
+            category=evidence_data.get("category", "observation"),
+            collected_at=datetime.now(timezone.utc),
+        )
+        case.evidence.append(evidence)
+        return await self.repository.save(case)
+
+    async def get_evidence(
+        self, case_id: str, evidence_id: str, user_id: str
+    ) -> Optional[dict]:
+        """Get specific evidence from a case."""
+        case = await self.repository.get(case_id)
+        if not case or case.user_id != user_id:
+            return None
+
+        for evidence in case.evidence:
+            if evidence.evidence_id == evidence_id:
+                return evidence.model_dump()
+        return None
+
+    async def get_uploaded_files(
+        self, case_id: str, user_id: str
+    ) -> Optional[list]:
+        """Get uploaded files for a case."""
+        case = await self.repository.get(case_id)
+        if not case or case.user_id != user_id:
+            return None
+
+        return [f.model_dump() for f in case.uploaded_files]
+
+    async def close_case(
+        self, case_id: str, user_id: str, close_data: Optional[dict] = None
+    ) -> Optional[Case]:
+        """Close a case."""
+        from fm_core_lib.models import CaseStatus
+        from datetime import datetime, timezone
+
+        case = await self.repository.get(case_id)
+        if not case or case.user_id != user_id:
+            return None
+
+        case.status = CaseStatus.CLOSED
+        case.updated_at = datetime.now(timezone.utc)
+
+        if close_data:
+            if "reason" in close_data:
+                case.metadata = case.metadata or {}
+                case.metadata["close_reason"] = close_data["reason"]
+            if "resolution_notes" in close_data:
+                case.metadata = case.metadata or {}
+                case.metadata["resolution_notes"] = close_data["resolution_notes"]
+
+        return await self.repository.save(case)
+
+    async def search_cases(
+        self, user_id: str, search_params: dict
+    ) -> Tuple[List[Case], int]:
+        """Search cases with filters."""
+        # For now, implement basic search using list endpoint
+        # TODO: Implement full-text search when needed
+        all_cases = await self.repository.list(
+            user_id=user_id,
+            limit=search_params.get("limit", 100)
+        )
+
+        # Apply basic filters
+        filtered = all_cases
+        if "query" in search_params:
+            query = search_params["query"].lower()
+            filtered = [
+                c for c in filtered
+                if query in c.title.lower() or query in c.description.lower()
+            ]
+
+        if "status" in search_params:
+            statuses = search_params["status"]
+            filtered = [c for c in filtered if c.status.value in statuses]
+
+        if "severity" in search_params:
+            severities = search_params["severity"]
+            filtered = [c for c in filtered if c.severity in severities]
+
+        return filtered, len(filtered)

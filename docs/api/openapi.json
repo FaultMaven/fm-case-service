@@ -1,0 +1,981 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "FaultMaven Case Service",
+    "description": "Microservice for case management",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/cases": {
+      "post": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "Create new troubleshooting case",
+        "description": "Creates a new troubleshooting case for the authenticated user.\n\n**Workflow**:\n1. Case created in 'active' status with auto-generated ID (case_XXXX format)\n2. Title auto-generated if not provided (Case-MMDD-N format)\n3. Optional session linking for associating with investigation sessions\n4. User can specify severity, category, metadata, and tags\n\n**Request Body Example**:\n```json\n{\n  \"title\": \"Redis connection timeouts in production\",\n  \"description\": \"Intermittent timeouts on Redis cluster during peak hours\",\n  \"severity\": \"high\",\n  \"category\": \"performance\",\n  \"session_id\": \"session_abc123\",\n  \"metadata\": {\"environment\": \"production\", \"cluster\": \"redis-prod-1\"},\n  \"tags\": [\"redis\", \"timeout\", \"performance\"]\n}\n```\n\n**Response Example**:\n```json\n{\n  \"case_id\": \"case_a1b2c3d4e5f6\",\n  \"user_id\": \"user_123\",\n  \"session_id\": \"session_abc123\",\n  \"title\": \"Redis connection timeouts in production\",\n  \"description\": \"Intermittent timeouts on Redis cluster during peak hours\",\n  \"status\": \"active\",\n  \"severity\": \"high\",\n  \"category\": \"performance\",\n  \"metadata\": {\"environment\": \"production\", \"cluster\": \"redis-prod-1\"},\n  \"tags\": [\"redis\", \"timeout\", \"performance\"],\n  \"created_at\": \"2025-11-19T10:30:00Z\",\n  \"updated_at\": \"2025-11-19T10:30:00Z\",\n  \"resolved_at\": null\n}\n```\n\n**Storage**: SQLite database (fm_cases.db) with user_id indexing\n**Rate Limits**: None (enforced at API Gateway level)\n**Authorization**: Requires X-User-ID header from fm-api-gateway\n**User Isolation**: Cases are strictly scoped to the creating user",
+        "operationId": "create_case_api_v1_cases_post",
+        "parameters": [
+          {
+            "name": "x-user-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Case created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                },
+                "example": {
+                  "case_id": "case_a1b2c3d4e5f6",
+                  "user_id": "user_123",
+                  "status": "active",
+                  "created_at": "2025-11-19T10:30:00Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data (validation error)"
+          },
+          "401": {
+            "description": "Unauthorized - missing or invalid X-User-ID header"
+          },
+          "500": {
+            "description": "Internal server error - database operation failed"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "List user's cases with pagination",
+        "description": "Retrieves a paginated list of cases for the authenticated user.\n\n**Query Parameters**:\n- `status` (optional): Filter by status (active/investigating/resolved/archived/closed)\n- `page` (default: 1): Page number (1-indexed)\n- `page_size` (default: 50, max: 100): Number of cases per page\n\n**Request Example**:\n```\nGET /api/v1/cases?status=investigating&page=1&page_size=20\nHeaders:\n  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n  \"cases\": [\n    {\n      \"case_id\": \"case_a1b2c3d4e5f6\",\n      \"title\": \"Redis timeout issue\",\n      \"status\": \"investigating\",\n      \"severity\": \"high\",\n      \"created_at\": \"2025-11-19T10:30:00Z\",\n      ...\n    },\n    {\n      \"case_id\": \"case_x7y8z9a0b1c2\",\n      \"title\": \"API latency spike\",\n      \"status\": \"investigating\",\n      \"severity\": \"medium\",\n      \"created_at\": \"2025-11-18T14:20:00Z\",\n      ...\n    }\n  ],\n  \"total\": 15,\n  \"page\": 1,\n  \"page_size\": 20\n}\n```\n\n**Pagination Calculation**:\n- `total`: Total number of cases matching filter\n- `total_pages`: ceil(total / page_size)\n- Use `page` and `page_size` to navigate through results\n\n**Sorting**: Cases returned in reverse chronological order (newest first)\n\n**Storage**: Indexed query on user_id and status\n**Authorization**: Requires X-User-ID header\n**User Isolation**: Only returns cases belonging to authenticated user",
+        "operationId": "list_cases_api_v1_cases_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CaseStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "x-user-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of cases returned successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters (e.g., page < 1 or page_size > 100)"
+          },
+          "401": {
+            "description": "Unauthorized - missing X-User-ID header"
+          },
+          "500": {
+            "description": "Internal server error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cases/{case_id}": {
+      "get": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "Get case by ID",
+        "description": "Retrieves a single case by its unique case_id.\n\n**Access Control**:\n- Users can only access their own cases\n- Attempting to access another user's case returns 404 (not 403) to prevent enumeration\n- Case ID must be exact match (case-sensitive)\n\n**Request Example**:\n```\nGET /api/v1/cases/case_a1b2c3d4e5f6\nHeaders:\n  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n  \"case_id\": \"case_a1b2c3d4e5f6\",\n  \"user_id\": \"user_123\",\n  \"session_id\": \"session_abc123\",\n  \"title\": \"Redis connection timeouts in production\",\n  \"description\": \"Intermittent timeouts on Redis cluster during peak hours\",\n  \"status\": \"investigating\",\n  \"severity\": \"high\",\n  \"category\": \"performance\",\n  \"metadata\": {\"environment\": \"production\"},\n  \"tags\": [\"redis\", \"timeout\"],\n  \"created_at\": \"2025-11-19T10:30:00Z\",\n  \"updated_at\": \"2025-11-19T11:15:00Z\",\n  \"resolved_at\": null\n}\n```\n\n**Storage**: Retrieved from SQLite with user_id filter\n**Authorization**: Requires X-User-ID header\n**User Isolation**: Enforced at database query level",
+        "operationId": "get_case_api_v1_cases__case_id__get",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "x-user-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Case found and returned successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - missing X-User-ID header"
+          },
+          "404": {
+            "description": "Case not found or access denied (returns 404 to prevent enumeration)"
+          },
+          "500": {
+            "description": "Internal server error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "Update case details",
+        "description": "Updates an existing case with new information. All fields are optional.\n\n**Updatable Fields**:\n- `title`: Case title (max 200 characters)\n- `description`: Detailed description\n- `status`: Case status (active/investigating/resolved/archived/closed)\n- `severity`: Severity level (low/medium/high/critical)\n- `category`: Category (performance/error/configuration/infrastructure/security/other)\n- `metadata`: Custom metadata dictionary (merged with existing)\n- `tags`: Tag list (replaces existing tags)\n\n**Request Example**:\n```json\n{\n  \"status\": \"investigating\",\n  \"severity\": \"critical\",\n  \"description\": \"Issue escalated - affecting 50% of users\",\n  \"metadata\": {\"escalated\": true, \"affected_users\": 500},\n  \"tags\": [\"redis\", \"timeout\", \"critical\", \"escalated\"]\n}\n```\n\n**Response Example**:\n```json\n{\n  \"case_id\": \"case_a1b2c3d4e5f6\",\n  \"status\": \"investigating\",\n  \"severity\": \"critical\",\n  \"updated_at\": \"2025-11-19T12:30:00Z\",\n  ...\n}\n```\n\n**Behavior**:\n- Only provided fields are updated (partial updates supported)\n- `updated_at` timestamp automatically updated\n- `resolved_at` set automatically when status changes to 'resolved'\n- Users can only update their own cases\n\n**Storage**: SQLite update with optimistic locking\n**Authorization**: Requires X-User-ID header\n**User Isolation**: Update only succeeds if case belongs to user",
+        "operationId": "update_case_api_v1_cases__case_id__put",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "x-user-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Case updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data"
+          },
+          "401": {
+            "description": "Unauthorized - missing X-User-ID header"
+          },
+          "404": {
+            "description": "Case not found or access denied"
+          },
+          "500": {
+            "description": "Internal server error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "Delete case permanently",
+        "description": "Permanently deletes a case from the database.\n\n**WARNING**: This operation is irreversible. The case and all associated data will be permanently deleted.\n\n**Request Example**:\n```\nDELETE /api/v1/cases/case_a1b2c3d4e5f6\nHeaders:\n  X-User-ID: user_123\n```\n\n**Response**:\n```\n204 No Content (success, no body returned)\n404 Not Found (case doesn't exist or access denied)\n```\n\n**Behavior**:\n- Case is permanently removed from database\n- Session associations are not affected (sessions remain)\n- Users can only delete their own cases\n- No soft-delete or archival (use status='archived' instead if you want to preserve data)\n\n**Recommended Alternative**: Consider updating status to 'archived' or 'closed' instead of deletion to preserve historical data:\n```\nPUT /api/v1/cases/{case_id}\n{\"status\": \"archived\"}\n```\n\n**Storage**: Hard delete from SQLite\n**Authorization**: Requires X-User-ID header\n**User Isolation**: Delete only succeeds if case belongs to user",
+        "operationId": "delete_case_api_v1_cases__case_id__delete",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "x-user-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Case deleted successfully (no content returned)"
+          },
+          "401": {
+            "description": "Unauthorized - missing X-User-ID header"
+          },
+          "404": {
+            "description": "Case not found or access denied"
+          },
+          "500": {
+            "description": "Internal server error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cases/session/{session_id}": {
+      "get": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "Get cases linked to a session",
+        "description": "Retrieves all cases associated with a specific investigation session.\n\n**Use Case**: When viewing an investigation session from fm-session-service, this endpoint shows all related troubleshooting cases.\n\n**Query Parameters**:\n- `page` (default: 1): Page number (1-indexed)\n- `page_size` (default: 50, max: 100): Number of cases per page\n\n**Request Example**:\n```\nGET /api/v1/cases/session/session_abc123?page=1&page_size=10\nHeaders:\n  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n  \"cases\": [\n    {\n      \"case_id\": \"case_a1b2c3d4e5f6\",\n      \"session_id\": \"session_abc123\",\n      \"title\": \"Database performance investigation\",\n      \"status\": \"investigating\",\n      ...\n    }\n  ],\n  \"total\": 3,\n  \"page\": 1,\n  \"page_size\": 10\n}\n```\n\n**Access Control**:\n- Returns only cases that belong to the authenticated user\n- Even if a session has cases from multiple users, only the current user's cases are returned\n- This prevents cross-user data leakage in shared session contexts\n\n**Cross-Service Integration**:\n- `session_id` comes from fm-session-service\n- No validation that session exists (loose coupling)\n- Session access control handled by fm-session-service\n\n**Storage**: Query on session_id with user_id filter\n**Authorization**: Requires X-User-ID header\n**User Isolation**: Filtered to authenticated user's cases only",
+        "operationId": "get_cases_for_session_api_v1_cases_session__session_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "x-user-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of cases for session returned successfully (may be empty)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters"
+          },
+          "401": {
+            "description": "Unauthorized - missing X-User-ID header"
+          },
+          "500": {
+            "description": "Internal server error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cases/{case_id}/status": {
+      "post": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "Update case status",
+        "description": "Updates only the status field of a case (convenience endpoint).\n\n**Status Transitions**:\n```\nactive \u2192 investigating \u2192 resolved\n         \u2193\n      archived\n         \u2193\n      closed\n```\n\n**Common Workflows**:\n- **Start Investigation**: active \u2192 investigating\n- **Resolve Issue**: investigating \u2192 resolved\n- **Archive Old Case**: resolved \u2192 archived\n- **Close Without Resolution**: investigating \u2192 closed\n\n**Request Example**:\n```json\n{\n  \"status\": \"resolved\"\n}\n```\n\n**Response Example**:\n```json\n{\n  \"case_id\": \"case_a1b2c3d4e5f6\",\n  \"status\": \"resolved\",\n  \"resolved_at\": \"2025-11-19T15:30:00Z\",\n  \"updated_at\": \"2025-11-19T15:30:00Z\",\n  ...\n}\n```\n\n**Automatic Timestamp Handling**:\n- `updated_at`: Always updated to current timestamp\n- `resolved_at`: Automatically set when status changes to 'resolved'\n- `resolved_at`: Cleared if status changes away from 'resolved'\n\n**Use Cases**:\n- Workflow automation (e.g., auto-resolve when all tests pass)\n- Status boards and dashboards\n- Case lifecycle tracking\n\n**Alternative**: You can also update status via `PUT /api/v1/cases/{case_id}` with `{\"status\": \"resolved\"}`, but this endpoint provides clearer semantics for status-only updates.\n\n**Storage**: SQLite update with timestamp management\n**Authorization**: Requires X-User-ID header\n**User Isolation**: Update only succeeds if case belongs to user",
+        "operationId": "update_case_status_api_v1_cases__case_id__status_post",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "x-user-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-User-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseStatusUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Case status updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid status value"
+          },
+          "401": {
+            "description": "Unauthorized - missing X-User-ID header"
+          },
+          "404": {
+            "description": "Case not found or access denied"
+          },
+          "500": {
+            "description": "Internal server error"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Health check endpoint.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CaseCategory": {
+        "type": "string",
+        "enum": [
+          "performance",
+          "error",
+          "configuration",
+          "infrastructure",
+          "security",
+          "other"
+        ],
+        "title": "CaseCategory",
+        "description": "Case categories."
+      },
+      "CaseCreateRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "default": ""
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/CaseSeverity",
+            "default": "medium"
+          },
+          "category": {
+            "$ref": "#/components/schemas/CaseCategory",
+            "default": "other"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          }
+        },
+        "type": "object",
+        "title": "CaseCreateRequest",
+        "description": "Request to create a new case."
+      },
+      "CaseListResponse": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/CaseResponse"
+            },
+            "type": "array",
+            "title": "Cases"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cases",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "CaseListResponse",
+        "description": "Response containing a list of cases."
+      },
+      "CaseResponse": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "title": "Case Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "user_id",
+          "session_id",
+          "title",
+          "description",
+          "status",
+          "severity",
+          "category",
+          "metadata",
+          "tags",
+          "created_at",
+          "updated_at",
+          "resolved_at"
+        ],
+        "title": "CaseResponse",
+        "description": "Response containing a single case."
+      },
+      "CaseSeverity": {
+        "type": "string",
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "critical"
+        ],
+        "title": "CaseSeverity",
+        "description": "Case severity levels."
+      },
+      "CaseStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "investigating",
+          "resolved",
+          "archived",
+          "closed"
+        ],
+        "title": "CaseStatus",
+        "description": "Case lifecycle status."
+      },
+      "CaseStatusUpdateRequest": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/CaseStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "CaseStatusUpdateRequest",
+        "description": "Request to update case status."
+      },
+      "CaseUpdateRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseSeverity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          }
+        },
+        "type": "object",
+        "title": "CaseUpdateRequest",
+        "description": "Request to update a case."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "database": {
+            "type": "string",
+            "title": "Database"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "service",
+          "version",
+          "database"
+        ],
+        "title": "HealthResponse",
+        "description": "Health check response."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

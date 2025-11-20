@@ -700,3 +700,103 @@ async def search_cases(
         page=1,
         page_size=len(cases),
     )
+
+
+# =============================================================================
+# Hypothesis Management Endpoints (Phase 6.3)
+# =============================================================================
+
+@router.post("/{case_id}/hypotheses", summary="Add hypothesis to case")
+async def add_hypothesis(
+    case_id: str,
+    hypothesis_data: dict,
+    user_id: str = Depends(get_user_id),
+    case_manager: CaseManager = Depends(get_case_manager),
+):
+    """Add a new hypothesis to investigation case."""
+    case = await case_manager.add_hypothesis(case_id, user_id, hypothesis_data)
+    if not case:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Case {case_id} not found")
+    return {"case_id": case_id, "hypothesis": hypothesis_data, "total_hypotheses": len(case.hypotheses)}
+
+
+@router.put("/{case_id}/hypotheses/{hypothesis_id}", summary="Update hypothesis")
+async def update_hypothesis(
+    case_id: str,
+    hypothesis_id: str,
+    updates: dict,
+    user_id: str = Depends(get_user_id),
+    case_manager: CaseManager = Depends(get_case_manager),
+):
+    """Update an existing hypothesis (status, confidence, etc)."""
+    hypothesis = await case_manager.update_hypothesis(case_id, hypothesis_id, user_id, updates)
+    if not hypothesis:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Hypothesis {hypothesis_id} not found")
+    return hypothesis
+
+
+@router.get("/{case_id}/queries", summary="Get case query history")
+async def get_case_queries(
+    case_id: str,
+    user_id: str = Depends(get_user_id),
+    case_manager: CaseManager = Depends(get_case_manager),
+):
+    """Get all user queries/messages for this case."""
+    queries = await case_manager.get_case_queries(case_id, user_id)
+    if queries is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Case {case_id} not found")
+    return {"case_id": case_id, "queries": queries, "total": len(queries)}
+
+
+# =============================================================================
+# Reports & Analytics Endpoints (Phase 6.3)
+# =============================================================================
+
+@router.get("/reports", summary="List available reports")
+async def list_reports(
+    user_id: str = Depends(get_user_id),
+    limit: int = Query(50, ge=1, le=100),
+):
+    """List available case reports for user."""
+    # TODO: Implement actual report generation system
+    return {
+        "reports": [],
+        "total": 0,
+        "message": "Report generation system not yet implemented"
+    }
+
+
+@router.get("/reports/{report_id}", summary="Get specific report")
+async def get_report(
+    report_id: str,
+    user_id: str = Depends(get_user_id),
+):
+    """Get specific case report by ID."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Report generation system not yet implemented"
+    )
+
+
+@router.get("/analytics/summary", summary="Get case analytics summary")
+async def get_analytics_summary(
+    user_id: str = Depends(get_user_id),
+    case_manager: CaseManager = Depends(get_case_manager),
+):
+    """Get analytics summary for user's cases."""
+    summary = await case_manager.get_analytics_summary(user_id)
+    return summary
+
+
+@router.get("/analytics/trends", summary="Get case trends")
+async def get_case_trends(
+    user_id: str = Depends(get_user_id),
+    days: int = Query(30, ge=1, le=365),
+):
+    """Get case trends over time."""
+    # TODO: Implement trend analysis
+    return {
+        "period_days": days,
+        "trends": [],
+        "message": "Trend analysis not yet implemented"
+    }

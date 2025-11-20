@@ -343,3 +343,103 @@ class CaseManager:
             filtered = [c for c in filtered if c.severity in severities]
 
         return filtered, len(filtered)
+
+    # =========================================================================
+    # Phase 6.3: Hypothesis Management
+    # =========================================================================
+
+    async def add_hypothesis(
+        self, case_id: str, user_id: str, hypothesis_data: dict
+    ) -> Optional[Case]:
+        """Add hypothesis to case."""
+        case = await self.repository.get(case_id)
+        if not case or case.user_id != user_id:
+            return None
+
+        from fm_core_lib.models import Hypothesis, HypothesisStatus
+        from datetime import datetime, timezone
+        from uuid import uuid4
+
+        hypothesis = Hypothesis(
+            hypothesis_id=f"hypothesis_{uuid4().hex[:12]}",
+            description=hypothesis_data.get("description", ""),
+            category=hypothesis_data.get("category", "root_cause"),
+            status=HypothesisStatus.PROPOSED,
+            confidence=hypothesis_data.get("confidence", 0.5),
+            generated_at=datetime.now(timezone.utc),
+        )
+        
+        # Add to case hypotheses dict
+        case.hypotheses[hypothesis.hypothesis_id] = hypothesis
+        return await self.repository.save(case)
+
+    async def update_hypothesis(
+        self, case_id: str, hypothesis_id: str, user_id: str, updates: dict
+    ) -> Optional[dict]:
+        """Update existing hypothesis."""
+        case = await self.repository.get(case_id)
+        if not case or case.user_id != user_id:
+            return None
+
+        if hypothesis_id not in case.hypotheses:
+            return None
+
+        hypothesis = case.hypotheses[hypothesis_id]
+        
+        # Update fields
+        if "status" in updates:
+            from fm_core_lib.models import HypothesisStatus
+            hypothesis.status = HypothesisStatus(updates["status"])
+        if "confidence" in updates:
+            hypothesis.confidence = updates["confidence"]
+        if "validation_notes" in updates:
+            hypothesis.validation_notes = updates["validation_notes"]
+
+        await self.repository.save(case)
+        return hypothesis.model_dump()
+
+    async def get_case_queries(
+        self, case_id: str, user_id: str
+    ) -> Optional[list]:
+        """Get query history for a case."""
+        case = await self.repository.get(case_id)
+        if not case or case.user_id != user_id:
+            return None
+
+        # Extract user messages from turn history
+        queries = []
+        for turn in case.turn_history:
+            if hasattr(turn, 'user_message') and turn.user_message:
+                queries.append({
+                    "turn_number": turn.turn_number,
+                    "message": turn.user_message,
+                    "timestamp": turn.turn_started_at.isoformat() if hasattr(turn, 'turn_started_at') else None,
+                })
+        
+        return queries
+
+    async def get_analytics_summary(self, user_id: str) -> dict:
+        """Get analytics summary for user's cases."""
+        all_cases = await self.repository.list(user_id=user_id, limit=1000)
+        
+        from fm_core_lib.models import CaseStatus
+        
+        summary = {
+            "total_cases": len(all_cases),
+            "by_status": {},
+            "by_severity": {},
+            "avg_resolution_time_hours": None,
+            "total_evidence_collected": 0,
+            "total_hypotheses_generated": 0,
+        }
+        
+        # Count by status
+        for case in all_cases:
+            status_key = case.status.value
+            summary["by_status"][status_key] = summary["by_status"].get(status_key, 0) + 1
+            
+            # Count evidence and hypotheses
+            summary["total_evidence_collected"] += len(case.evidence)
+            summary["total_hypotheses_generated"] += len(case.hypotheses)
+        
+        return summary

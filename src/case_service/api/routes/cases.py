@@ -27,18 +27,26 @@ router = APIRouter(prefix="/api/v1/cases", tags=["cases"])
 async def get_case_repository() -> "CaseRepository":
     """Dependency to get case repository.
 
-    Returns the appropriate repository implementation based on configuration.
-    For now, uses InMemoryCaseRepository for development.
-    TODO: Switch to PostgreSQLHybridCaseRepository for production.
+    Returns the appropriate repository implementation based on CASE_STORAGE_TYPE
+    environment variable:
+    - inmemory (default): InMemoryCaseRepository for dev/testing
+    - postgres: PostgreSQLHybridCaseRepository for production
     """
-    from case_service.infrastructure.persistence import InMemoryCaseRepository
-    # TODO: Use env var to select repository type
-    # if os.getenv("REPOSITORY_TYPE") == "postgres_hybrid":
-    #     from case_service.infrastructure.persistence import PostgreSQLHybridCaseRepository
-    #     async for session in db_client.get_session():
-    #         yield PostgreSQLHybridCaseRepository(session)
-    # else:
-    return InMemoryCaseRepository()
+    import os
+    from case_service.infrastructure.persistence import (
+        InMemoryCaseRepository,
+        PostgreSQLHybridCaseRepository,
+    )
+
+    storage_type = os.getenv("CASE_STORAGE_TYPE", "inmemory").lower()
+
+    if storage_type == "postgres":
+        # Use PostgreSQL with hybrid schema
+        async for session in db_client.get_session():
+            yield PostgreSQLHybridCaseRepository(session)
+    else:
+        # Default to in-memory for development/testing
+        yield InMemoryCaseRepository()
 
 
 async def get_case_manager(

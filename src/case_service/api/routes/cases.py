@@ -22,17 +22,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/cases", tags=["cases"])
 
 
-async def get_db_session() -> AsyncSession:
-    """Dependency to get database session."""
-    async for session in db_client.get_session():
-        yield session
+async def get_case_repository() -> "CaseRepository":
+    """Dependency to get case repository.
+
+    Returns the appropriate repository implementation based on configuration.
+    For now, uses InMemoryCaseRepository for development.
+    TODO: Switch to PostgreSQLHybridCaseRepository for production.
+    """
+    from case_service.infrastructure.persistence import InMemoryCaseRepository
+    # TODO: Use env var to select repository type
+    # if os.getenv("REPOSITORY_TYPE") == "postgres_hybrid":
+    #     from case_service.infrastructure.persistence import PostgreSQLHybridCaseRepository
+    #     async for session in db_client.get_session():
+    #         yield PostgreSQLHybridCaseRepository(session)
+    # else:
+    return InMemoryCaseRepository()
 
 
 async def get_case_manager(
-    db_session: AsyncSession = Depends(get_db_session),
+    repository: "CaseRepository" = Depends(get_case_repository),
 ) -> CaseManager:
-    """Dependency to get case manager."""
-    return CaseManager(db_session)
+    """Dependency to get case manager with repository."""
+    return CaseManager(repository)
 
 
 async def get_user_id(x_user_id: Optional[str] = Header(None)) -> str:

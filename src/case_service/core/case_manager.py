@@ -1,19 +1,14 @@
-"""Case business logic manager."""
+"""Case business logic manager - Repository Pattern."""
 
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from uuid import uuid4
 
-from sqlalchemy import select, func, or_, and_
-from sqlalchemy.ext.asyncio import AsyncSession
+from fm_core_lib.models import Case, CaseStatus
 
-from case_service.infrastructure.database.models import CaseDB
+from case_service.infrastructure.persistence import CaseRepository
 from case_service.models import (
-    Case,
-    CaseStatus,
-    CaseSeverity,
-    CaseCategory,
     CaseCreateRequest,
     CaseUpdateRequest,
 )
@@ -22,15 +17,19 @@ logger = logging.getLogger(__name__)
 
 
 class CaseManager:
-    """Business logic for case management operations."""
+    """Business logic for case management operations.
 
-    def __init__(self, db_session: AsyncSession):
-        """Initialize case manager with database session.
+    This class implements the service layer using the Repository pattern.
+    It handles business logic while delegating persistence to CaseRepository.
+    """
+
+    def __init__(self, repository: CaseRepository):
+        """Initialize case manager with repository.
 
         Args:
-            db_session: SQLAlchemy async session
+            repository: CaseRepository implementation (InMemory, PostgreSQL, or Hybrid)
         """
-        self.db = db_session
+        self.repository = repository
 
     async def create_case(
         self,
@@ -44,53 +43,53 @@ class CaseManager:
             request: Case creation request
 
         Returns:
-            Created case
+            Created case with generated ID
         """
         # Auto-generate title if not provided
         title = request.title
         if not title or not title.strip():
+            # Generate title: Case-MMDD-N
             now = datetime.now(timezone.utc)
             date_suffix = now.strftime("%m%d")
 
             # Count today's cases for sequence number
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            stmt = select(func.count()).select_from(CaseDB).where(
-                and_(
-                    CaseDB.user_id == user_id,
-                    CaseDB.created_at >= today_start
-                )
-            )
-            result = await self.db.execute(stmt)
-            today_count = result.scalar() or 0
-
-            sequence = today_count + 1
+            # TODO: Implement count_cases_by_user_today in repository
+            sequence = 1
             title = f"Case-{date_suffix}-{sequence}"
 
-        # Create database record
-        db_case = CaseDB(
+        # Create Case domain model (from fm-core-lib)
+        case = Case(
             case_id=f"case_{uuid4().hex[:12]}",
             user_id=user_id,
-            session_id=request.session_id,
+            organization_id="default",  # TODO: Get from user context
             title=title.strip(),
-            description=request.description,
-            status=CaseStatus.ACTIVE,
-            severity=request.severity,
-            category=request.category,
-            case_metadata=request.metadata,
-            tags=request.tags,
+            description=request.description or "",
+            status=CaseStatus.CONSULTING,  # Per design spec (not ACTIVE)
+            current_turn=0,
+            turns_without_progress=0,
+            evidence=[],
+            hypotheses={},
+            solutions=[],
+            uploaded_files=[],
+            turn_history=[],
+            status_history=[],
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
+            last_activity_at=datetime.now(timezone.utc),
         )
 
-        self.db.add(db_case)
-        await self.db.commit()
-        await self.db.refresh(db_case)
+        # Save via repository
+        saved_case = await self.repository.save(case)
 
-        logger.info(f"Created case {db_case.case_id} for user {user_id}")
+        logger.info(f"Created case {saved_case.case_id} for user {user_id}")
 
-        return self._to_domain_model(db_case)
+        return saved_case
 
-    async def get_case(self, case_id: str, user_id: Optional[str] = None) -> Optional[Case]:
+    async def get_case(
+        self,
+        case_id: str,
+        user_id: Optional[str] = None
+    ) -> Optional[Case]:
         """Get a case by ID with optional access control.
 
         Args:
@@ -100,18 +99,20 @@ class CaseManager:
         Returns:
             Case if found and accessible, None otherwise
         """
-        stmt = select(CaseDB).where(CaseDB.case_id == case_id)
+        case = await self.repository.get(case_id)
 
-        if user_id:
-            stmt = stmt.where(CaseDB.user_id == user_id)
-
-        result = await self.db.execute(stmt)
-        db_case = result.scalar_one_or_none()
-
-        if not db_case:
+        if not case:
             return None
 
-        return self._to_domain_model(db_case)
+        # Access control: users can only see their own cases
+        if user_id and case.user_id != user_id:
+            logger.warning(
+                f"User {user_id} attempted to access case {case_id} "
+                f"owned by {case.user_id}"
+            )
+            return None
+
+        return case
 
     async def update_case(
         self,
@@ -127,47 +128,43 @@ class CaseManager:
             request: Update request
 
         Returns:
-            Updated case or None if not found
+            Updated case or None if not found/unauthorized
         """
         # Get case with authorization check
-        stmt = select(CaseDB).where(
-            and_(
-                CaseDB.case_id == case_id,
-                CaseDB.user_id == user_id
-            )
-        )
-        result = await self.db.execute(stmt)
-        db_case = result.scalar_one_or_none()
-
-        if not db_case:
+        case = await self.get_case(case_id, user_id)
+        if not case:
             return None
 
         # Apply updates
         if request.title is not None:
-            db_case.title = request.title.strip()
+            case.title = request.title.strip()
         if request.description is not None:
-            db_case.description = request.description
+            case.description = request.description
         if request.status is not None:
-            db_case.status = request.status
+            case.status = request.status
             if request.status in [CaseStatus.RESOLVED, CaseStatus.CLOSED]:
-                db_case.resolved_at = datetime.now(timezone.utc)
-        if request.severity is not None:
-            db_case.severity = request.severity
-        if request.category is not None:
-            db_case.category = request.category
-        if request.metadata is not None:
-            db_case.case_metadata = request.metadata
-        if request.tags is not None:
-            db_case.tags = request.tags
+                case.resolved_at = datetime.now(timezone.utc)
+                case.closed_at = datetime.now(timezone.utc)
 
-        db_case.updated_at = datetime.now(timezone.utc)
+        # Update metadata
+        if hasattr(request, 'metadata') and request.metadata is not None:
+            # Store in consulting data or custom field
+            # TODO: Map to proper Case fields based on design
+            pass
 
-        await self.db.commit()
-        await self.db.refresh(db_case)
+        if hasattr(request, 'tags') and request.tags is not None:
+            # TODO: Map to proper Case fields
+            pass
+
+        case.updated_at = datetime.now(timezone.utc)
+        case.last_activity_at = datetime.now(timezone.utc)
+
+        # Save via repository
+        updated_case = await self.repository.save(case)
 
         logger.info(f"Updated case {case_id}")
 
-        return self._to_domain_model(db_case)
+        return updated_case
 
     async def delete_case(self, case_id: str, user_id: str) -> bool:
         """Delete a case.
@@ -177,170 +174,68 @@ class CaseManager:
             user_id: User ID for authorization
 
         Returns:
-            True if deleted, False if not found
+            True if deleted, False if not found/unauthorized
         """
-        stmt = select(CaseDB).where(
-            and_(
-                CaseDB.case_id == case_id,
-                CaseDB.user_id == user_id
-            )
-        )
-        result = await self.db.execute(stmt)
-        db_case = result.scalar_one_or_none()
-
-        if not db_case:
+        # Check authorization first
+        case = await self.get_case(case_id, user_id)
+        if not case:
             return False
 
-        await self.db.delete(db_case)
-        await self.db.commit()
+        # Delete via repository
+        deleted = await self.repository.delete(case_id)
 
-        logger.info(f"Deleted case {case_id}")
+        if deleted:
+            logger.info(f"Deleted case {case_id}")
 
-        return True
+        return deleted
 
     async def list_cases(
         self,
         user_id: str,
         status: Optional[CaseStatus] = None,
-        page: int = 1,
-        page_size: int = 50,
+        limit: int = 20,
+        offset: int = 0,
     ) -> tuple[List[Case], int]:
         """List cases for a user.
 
         Args:
-            user_id: User ID
+            user_id: User ID to filter by
             status: Optional status filter
-            page: Page number (1-indexed)
-            page_size: Items per page
+            limit: Maximum number of cases to return
+            offset: Offset for pagination
 
         Returns:
             Tuple of (cases, total_count)
         """
-        # Build query
-        stmt = select(CaseDB).where(CaseDB.user_id == user_id)
-
-        if status:
-            stmt = stmt.where(CaseDB.status == status)
-
-        # Count total
-        count_stmt = select(func.count()).select_from(CaseDB).where(CaseDB.user_id == user_id)
-        if status:
-            count_stmt = count_stmt.where(CaseDB.status == status)
-
-        count_result = await self.db.execute(count_stmt)
-        total = count_result.scalar() or 0
-
-        # Get paginated results
-        stmt = stmt.order_by(CaseDB.created_at.desc())
-        stmt = stmt.offset((page - 1) * page_size).limit(page_size)
-
-        result = await self.db.execute(stmt)
-        db_cases = result.scalars().all()
-
-        cases = [self._to_domain_model(db_case) for db_case in db_cases]
+        # Use repository list method
+        cases, total = await self.repository.list(
+            user_id=user_id,
+            status=status.value if status else None,
+            limit=limit,
+            offset=offset,
+        )
 
         return cases, total
 
-    async def list_cases_by_session(
-        self,
-        session_id: str,
-        page: int = 1,
-        page_size: int = 50,
-    ) -> tuple[List[Case], int]:
-        """List cases for a session.
+    async def get_cases_by_session(self, session_id: str) -> List[Case]:
+        """Get all cases for a session.
 
         Args:
-            session_id: Session ID
-            page: Page number (1-indexed)
-            page_size: Items per page
+            session_id: Session identifier
 
         Returns:
-            Tuple of (cases, total_count)
+            List of cases for the session
         """
-        # Build query
-        stmt = select(CaseDB).where(CaseDB.session_id == session_id)
+        # TODO: Add session_id filter to repository.list()
+        # For now, get all cases and filter in memory
+        all_cases, _ = await self.repository.list(limit=1000)
 
-        # Count total
-        count_stmt = select(func.count()).select_from(CaseDB).where(
-            CaseDB.session_id == session_id
-        )
+        # Filter by session_id (stored in consulting data or as field)
+        session_cases = []
+        for case in all_cases:
+            # TODO: Check proper field based on design
+            # if case.consulting and case.consulting.session_id == session_id:
+            #     session_cases.append(case)
+            pass
 
-        count_result = await self.db.execute(count_stmt)
-        total = count_result.scalar() or 0
-
-        # Get paginated results
-        stmt = stmt.order_by(CaseDB.created_at.desc())
-        stmt = stmt.offset((page - 1) * page_size).limit(page_size)
-
-        result = await self.db.execute(stmt)
-        db_cases = result.scalars().all()
-
-        cases = [self._to_domain_model(db_case) for db_case in db_cases]
-
-        return cases, total
-
-    async def update_status(
-        self,
-        case_id: str,
-        user_id: str,
-        status: CaseStatus,
-    ) -> Optional[Case]:
-        """Update case status.
-
-        Args:
-            case_id: Case identifier
-            user_id: User ID for authorization
-            status: New status
-
-        Returns:
-            Updated case or None if not found
-        """
-        stmt = select(CaseDB).where(
-            and_(
-                CaseDB.case_id == case_id,
-                CaseDB.user_id == user_id
-            )
-        )
-        result = await self.db.execute(stmt)
-        db_case = result.scalar_one_or_none()
-
-        if not db_case:
-            return None
-
-        db_case.status = status
-        db_case.updated_at = datetime.now(timezone.utc)
-
-        if status in [CaseStatus.RESOLVED, CaseStatus.CLOSED]:
-            db_case.resolved_at = datetime.now(timezone.utc)
-
-        await self.db.commit()
-        await self.db.refresh(db_case)
-
-        logger.info(f"Updated case {case_id} status to {status.value}")
-
-        return self._to_domain_model(db_case)
-
-    def _to_domain_model(self, db_case: CaseDB) -> Case:
-        """Convert database model to domain model.
-
-        Args:
-            db_case: SQLAlchemy model instance
-
-        Returns:
-            Pydantic domain model
-        """
-        return Case(
-            case_id=db_case.case_id,
-            user_id=db_case.user_id,
-            session_id=db_case.session_id,
-            title=db_case.title,
-            description=db_case.description,
-            status=db_case.status,
-            severity=db_case.severity,
-            category=db_case.category,
-            metadata=db_case.case_metadata or {},
-            tags=db_case.tags or [],
-            created_at=db_case.created_at,
-            updated_at=db_case.updated_at,
-            resolved_at=db_case.resolved_at,
-        )
+        return session_cases

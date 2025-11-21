@@ -1,28 +1,17 @@
 # FaultMaven Case Service - PUBLIC Open Source Version
 # Apache 2.0 License
 
-# Stage 1: Builder
-FROM python:3.11-slim as builder
-
-WORKDIR /app
-
-# Install poetry
-RUN pip install --no-cache-dir poetry==1.7.0
-
-# Copy dependency files
-COPY pyproject.toml poetry.lock* ./
-
-# Export dependencies to requirements.txt (no dev dependencies)
-RUN poetry export -f requirements.txt --output requirements.txt --without-hashes --without dev
-
-# Stage 2: Runtime
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install runtime dependencies only
-COPY --from=builder /app/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install git (for fm-core-lib dependency) and poetry
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir poetry==1.7.0
+
+# Copy dependency files and install
+COPY pyproject.toml poetry.lock ./
+RUN poetry config virtualenvs.create false && poetry install --no-dev --no-interaction --no-ansi
 
 # Copy source code
 COPY src/ ./src/

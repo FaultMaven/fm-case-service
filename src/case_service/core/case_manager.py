@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 from uuid import uuid4
 
-from fm_core_lib.models import Case, CaseStatus
+# Use local simplified Case model, not fm-core-lib
+from case_service.models.case import Case, CaseStatus
 
 from case_service.infrastructure.persistence import CaseRepository
 from case_service.models import (
@@ -57,27 +58,17 @@ class CaseManager:
             sequence = 1
             title = f"Case-{date_suffix}-{sequence}"
 
-        # Create Case domain model (from fm-core-lib)
-        # NOTE: fm-core-lib Case model doesn't have session_id field
-        # (sessions are for authentication only, not stored in cases)
+        # Create Case using local simplified model
         case = Case(
             case_id=f"case_{uuid4().hex[:12]}",
             user_id=user_id,
-            organization_id="default",  # TODO: Get from user context
+            session_id=None,  # Will be set when case is associated with a session
             title=title.strip(),
             description=request.description or "",
-            status=CaseStatus.CONSULTING,  # Per design spec (not ACTIVE)
-            current_turn=0,
-            turns_without_progress=0,
-            evidence=[],
-            hypotheses={},
-            solutions=[],
-            uploaded_files=[],
-            turn_history=[],
-            status_history=[],
+            status=CaseStatus.ACTIVE,  # Default status
+            # severity, category, metadata, tags use defaults from model
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
-            last_activity_at=datetime.now(timezone.utc),
         )
 
         # Save via repository

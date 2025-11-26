@@ -58,10 +58,11 @@ class CaseManager:
             title = f"Case-{date_suffix}-{sequence}"
 
         # Create Case domain model (from fm-core-lib)
+        # NOTE: fm-core-lib Case model doesn't have session_id field
+        # (sessions are for authentication only, not stored in cases)
         case = Case(
             case_id=f"case_{uuid4().hex[:12]}",
             user_id=user_id,
-            session_id=None,  # Will be set when case is associated with a session
             organization_id="default",  # TODO: Get from user context
             title=title.strip(),
             description=request.description or "",

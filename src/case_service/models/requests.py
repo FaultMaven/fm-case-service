@@ -43,7 +43,8 @@ class CaseResponse(BaseModel):
 
     case_id: str
     user_id: str
-    session_id: Optional[str]
+    # NOTE: session_id removed - fm-core-lib Case model doesn't have this field
+    # Sessions are for authentication only, not stored in cases
     title: str
     description: str
     status: str
@@ -61,7 +62,7 @@ class CaseResponse(BaseModel):
         return cls(
             case_id=case.case_id,
             user_id=case.user_id,
-            session_id=case.session_id,
+            # session_id removed - not in fm-core-lib Case model
             title=case.title,
             description=case.description,
             status=case.status.value,

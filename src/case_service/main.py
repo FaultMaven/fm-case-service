@@ -2,9 +2,11 @@
 
 import logging
 import sys
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fm_core_lib.auth import ServiceAuthMiddleware
 
 from case_service.config import settings
 from case_service.infrastructure.database import db_client
@@ -26,6 +28,36 @@ app = FastAPI(
     description="Microservice for case management",
     version="1.0.0",
 )
+
+
+# Load service authentication public key
+def load_service_public_key() -> str:
+    """Load RSA public key for service token verification."""
+    public_key_path = Path("/app/config/service-public-key.pem")
+
+    if not public_key_path.exists():
+        logger.warning(f"Service public key not found at {public_key_path}")
+        logger.warning("Service-to-service authentication will be DISABLED")
+        return None
+
+    with open(public_key_path, "r") as f:
+        return f.read()
+
+
+# Add Service Authentication Middleware
+public_key = load_service_public_key()
+if public_key:
+    app.add_middleware(
+        ServiceAuthMiddleware,
+        public_key=public_key,
+        jwt_algorithm="RS256",
+        jwt_audience="faultmaven-api",
+        jwt_issuer="fm-auth-service",
+        skip_paths=["/health", "/docs", "/openapi.json"],
+    )
+    logger.info("Service authentication middleware enabled")
+else:
+    logger.warning("Service authentication middleware DISABLED - no public key found")
 
 # Configure CORS
 app.add_middleware(

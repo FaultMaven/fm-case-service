@@ -3,8 +3,9 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from fm_core_lib.auth import RequestContext, get_request_context
 
 from case_service.core import CaseManager
 from case_service.infrastructure.database import db_client
@@ -56,24 +57,30 @@ async def get_case_manager(
     return CaseManager(repository)
 
 
-async def get_user_id(x_user_id: Optional[str] = Header(None)) -> str:
-    """Get user ID from gateway headers.
+async def get_user_id(request: Request) -> str:
+    """Get user ID from request context (set by ServiceAuthMiddleware).
+
+    The ServiceAuthMiddleware extracts user_id from X-User-ID header
+    and validates the service JWT token, adding both to request context.
 
     Args:
-        x_user_id: User ID from X-User-ID header set by gateway
+        request: FastAPI request with context from ServiceAuthMiddleware
 
     Returns:
-        User ID
+        User ID from request context
 
     Raises:
-        HTTPException: If user ID header is missing
+        HTTPException: If user ID is not found in context
     """
-    if not x_user_id:
+    context: RequestContext = get_request_context(request)
+
+    if not context.user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User ID header (X-User-ID) is required",
+            detail="User ID is required",
         )
-    return x_user_id
+
+    return context.user_id
 
 
 # =============================================================================

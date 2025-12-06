@@ -70,7 +70,7 @@ jobs:
         run: |
           echo "### ✅ Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image**: \`${{ env.IMAGE_NAME }}:sha-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image**: \`${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Next: Integration testing with Docker Compose stack" >> $GITHUB_STEP_SUMMARY
@@ -85,7 +85,7 @@ jobs:
     uses: FaultMaven/faultmaven-deploy/.github/workflows/integration-test.yml@main
     with:
       service_name: fm-case-service
-      image_tag: sha-${{ github.sha }}
+      image_tag: ${{ needs.build.outputs.image_tag }}
     secrets: inherit
 
   # ============================================================================
@@ -114,10 +114,10 @@ jobs:
           cat kustomization.yaml
 
           echo ""
-          echo "Updating image to: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
+          echo "Updating image to: ${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }}"
 
           kustomize edit set image \
-            ${{ env.IMAGE_NAME }}=${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+            ${{ env.IMAGE_NAME }}=${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }}
 
           echo ""
           echo "Updated kustomization:"
@@ -153,7 +153,7 @@ jobs:
           echo "### ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Service**: ${{ env.SERVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Image**: \`${{ env.IMAGE_NAME }}:sha-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image**: \`${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Namespace**: faultmaven" >> $GITHUB_STEP_SUMMARY
           echo "**Cluster**: production (192.168.0.100:6443)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

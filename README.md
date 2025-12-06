@@ -304,3 +304,13 @@ See our [Contributing Guide](https://github.com/FaultMaven/.github/blob/main/CON
 - CI/CD: GitHub Actions
 
 *This README is automatically updated on every commit to ensure zero documentation drift.*
+
+## CI/CD Pipeline
+
+This service uses a 3-stage CI/CD pipeline:
+
+1. **Build** - Docker image build and push to GHCR
+2. **Integration Test** - Full stack testing with Docker Compose
+3. **Deploy** - Zero-downtime deployment to Kubernetes cluster
+
+All deployments to production require manual approval.

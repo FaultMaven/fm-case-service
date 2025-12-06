@@ -63,7 +63,12 @@ jobs:
 
       - name: Set image tag output
         id: image-tag
-        run: echo "tag=sha-${{ github.sha }}" >> $GITHUB_OUTPUT
+        run: |
+          # Extract the SHA tag from metadata action output
+          # Format: "latest\nsha-0ecb492" -> extract "sha-0ecb492"
+          TAG=$(echo "${{ steps.meta.outputs.tags }}" | grep -oP 'sha-[a-f0-9]+$' | head -1)
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Using image tag: $TAG"
 
       - name: Build summary
         if: github.event_name != 'pull_request'

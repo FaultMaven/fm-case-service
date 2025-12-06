@@ -1,5 +1,8 @@
 # FaultMaven Case Service
 
+> **Part of [FaultMaven](https://github.com/FaultMaven/faultmaven)** —
+> The AI-Powered Troubleshooting Copilot
+
 > **🤖 This README is auto-generated** from code on every commit.
 > Last updated: **2025-11-19 03:09 UTC** | Total endpoints: **8**
 
@@ -284,18 +287,12 @@ Apache 2.0 - See [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-Contributions welcome! Please:
+See our [Contributing Guide](https://github.com/FaultMaven/.github/blob/main/CONTRIBUTING.md) for detailed guidelines.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests and quality checks (`pytest && black . && flake8`)
-5. Commit with clear messages (`git commit -m 'feat: Add amazing feature'`)
-6. Push to your fork (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+## Support
 
-**Code Style**: Black formatting, flake8 linting, mypy type checking
-**Commit Convention**: Conventional Commits (feat/fix/docs/refactor/test/chore)
+- **Discussions:** [GitHub Discussions](https://github.com/FaultMaven/faultmaven/discussions)
+- **Issues:** [GitHub Issues](https://github.com/FaultMaven/fm-case-service/issues)
 
 ---
 

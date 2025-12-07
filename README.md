@@ -173,12 +173,20 @@ All case operations are scoped to the user specified in `X-User-ID`. Users can o
 
 **Security Model:**
 
+Services trust X-User-* headers from the API Gateway without validating JWTs. The gateway:
+
+1. **Strips client-provided X-User-* headers** (prevents header injection attacks)
+2. **Validates user JWT tokens** (when AUTH_REQUIRED=true)
+3. **Adds validated X-User-* headers** to backend requests
+
+Additional protections:
+
 - ✅ User isolation enforced at database query level
 - ✅ All endpoints validate X-User-ID header presence
 - ✅ Cross-user access attempts return 404 (not 403) to prevent enumeration
-- ⚠️ Service trusts headers set by upstream gateway
+- ⚠️ Service trusts headers from gateway (network isolation required)
 
-**Important**: This service should run behind the [fm-api-gateway](https://github.com/FaultMaven/faultmaven) which handles authentication and sets these headers. Never expose this service directly to the internet.
+**Important**: This service MUST run behind the [fm-api-gateway](https://github.com/FaultMaven/faultmaven) on a private Docker/Kubernetes network. Never expose this service directly to the internet.
 
 ## Architecture
 

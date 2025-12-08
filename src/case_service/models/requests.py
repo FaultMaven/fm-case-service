@@ -5,7 +5,28 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from .case import Case, CaseStatus, CaseSeverity, CaseCategory
+from fm_core_lib.models import Case, CaseStatus
+
+# Legacy enums for backward-compatible API (will be moved to metadata)
+from enum import Enum
+
+
+class CaseSeverity(str, Enum):
+    """Legacy severity levels (stored in metadata)."""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class CaseCategory(str, Enum):
+    """Legacy category types (stored in metadata)."""
+    PERFORMANCE = "performance"
+    ERROR = "error"
+    CONFIGURATION = "configuration"
+    INFRASTRUCTURE = "infrastructure"
+    SECURITY = "security"
+    OTHER = "other"
 
 
 class CaseCreateRequest(BaseModel):
@@ -43,7 +64,7 @@ class CaseResponse(BaseModel):
 
     case_id: str
     user_id: str
-    session_id: Optional[str]
+    session_id: Optional[str] = None  # Deprecated, kept for backward compatibility
     title: str
     description: str
     status: str
@@ -58,17 +79,21 @@ class CaseResponse(BaseModel):
     @classmethod
     def from_case(cls, case: Case) -> "CaseResponse":
         """Convert Case model to response."""
+        # Extract severity and category from metadata for backward compatibility
+        severity = case.metadata.get("severity", "medium")
+        category = case.metadata.get("category", "other")
+
         return cls(
             case_id=case.case_id,
             user_id=case.user_id,
-            session_id=case.session_id,
+            session_id=None,  # No longer used
             title=case.title,
             description=case.description,
             status=case.status.value,
-            severity=case.severity.value,
-            category=case.category.value,
+            severity=severity,
+            category=category,
             metadata=case.metadata,
-            tags=case.tags,
+            tags=[],  # fm-core-lib Case doesn't have top-level tags
             created_at=case.created_at,
             updated_at=case.updated_at,
             resolved_at=case.resolved_at,

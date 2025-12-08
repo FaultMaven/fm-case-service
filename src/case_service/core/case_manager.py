@@ -5,8 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 from uuid import uuid4
 
-# Use local simplified Case model, not fm-core-lib
-from case_service.models.case import Case, CaseStatus
+from fm_core_lib.models import Case, CaseStatus
 
 from case_service.infrastructure.persistence import CaseRepository
 from case_service.models import (
@@ -58,17 +57,20 @@ class CaseManager:
             sequence = 1
             title = f"Case-{date_suffix}-{sequence}"
 
-        # Create Case using local simplified model
+        # Prepare metadata with severity and category for backward compatibility
+        metadata = request.metadata.copy()
+        metadata["severity"] = request.severity.value
+        metadata["category"] = request.category.value
+
+        # Create Case using fm-core-lib model
         case = Case(
             case_id=f"case_{uuid4().hex[:12]}",
             user_id=user_id,
-            session_id=None,  # Will be set when case is associated with a session
+            organization_id="default",  # TODO: Extract from X-Organization-Id header when available
             title=title.strip(),
             description=request.description or "",
-            status=CaseStatus.ACTIVE,  # Default status
-            # severity, category, metadata, tags use defaults from model
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            status=CaseStatus.CONSULTING,  # Start in consulting phase
+            metadata=metadata,
         )
 
         # Save via repository

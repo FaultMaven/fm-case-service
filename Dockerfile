@@ -5,18 +5,21 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install git (for fm-core-lib dependency) and poetry
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+# Install poetry
 RUN pip install --no-cache-dir poetry==1.7.0
 
+# Copy fm-core-lib first (required dependency)
+COPY fm-core-lib/ ./fm-core-lib/
+RUN pip install --no-cache-dir ./fm-core-lib
+
 # Copy dependency files and install
-COPY pyproject.toml ./
+COPY fm-case-service/pyproject.toml ./
 RUN poetry config virtualenvs.create false && poetry install --no-dev --no-interaction --no-ansi --no-root
 
 # Copy source code and migrations
-COPY src/ ./src/
-COPY alembic/ ./alembic/
-COPY alembic.ini ./
+COPY fm-case-service/src/ ./src/
+COPY fm-case-service/alembic/ ./alembic/
+COPY fm-case-service/alembic.ini ./
 
 # Create data directory for SQLite database
 RUN mkdir -p /data && chmod 777 /data

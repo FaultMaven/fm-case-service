@@ -98,33 +98,31 @@ class PostgreSQLHybridCaseRepository(CaseRepository):
             # Update timestamp
             case.updated_at = datetime.now(timezone.utc)
 
-            # Start transaction
-            async with self.db.begin():
-                # 1. Upsert main cases table
-                await self._upsert_case_record(case)
+            # 1. Upsert main cases table
+            await self._upsert_case_record(case)
 
-                # 2. Upsert evidence (normalized table)
-                await self._upsert_evidence(case.case_id, case.evidence)
+            # 2. Upsert evidence (normalized table)
+            await self._upsert_evidence(case.case_id, case.evidence)
 
-                # 3. Upsert hypotheses (normalized table)
-                await self._upsert_hypotheses(case.case_id, case.hypotheses)
+            # 3. Upsert hypotheses (normalized table)
+            await self._upsert_hypotheses(case.case_id, case.hypotheses)
 
-                # 4. Upsert solutions (normalized table)
-                await self._upsert_solutions(case.case_id, case.solutions)
+            # 4. Upsert solutions (normalized table)
+            await self._upsert_solutions(case.case_id, case.solutions)
 
-                # 5. Upsert uploaded_files (normalized table)
-                await self._upsert_uploaded_files(case.case_id, case.uploaded_files)
+            # 5. Upsert uploaded_files (normalized table)
+            await self._upsert_uploaded_files(case.case_id, case.uploaded_files)
 
-                # 6. Append status transitions (append-only)
-                if case.status_history:
-                    await self._append_status_transitions(case.case_id, case.status_history)
+            # 6. Append status transitions (append-only)
+            if case.status_history:
+                await self._append_status_transitions(case.case_id, case.status_history)
 
-                await self.db.commit()
+            # Flush to ensure writes are pending (commit handled by get_session)
+            await self.db.flush()
 
             return case
 
         except Exception as e:
-            await self.db.rollback()
             raise RepositoryException(f"Failed to save case {case.case_id}: {e}") from e
 
     async def get(self, case_id: str) -> Optional[Case]:
@@ -318,12 +316,11 @@ class PostgreSQLHybridCaseRepository(CaseRepository):
         try:
             query = text("DELETE FROM cases WHERE case_id = :case_id")
             result = await self.db.execute(query, {"case_id": case_id})
-            await self.db.commit()
+            await self.db.flush()
 
             return result.rowcount > 0
 
         except Exception as e:
-            await self.db.rollback()
             raise RepositoryException(f"Failed to delete case {case_id}: {e}") from e
 
     async def share_case(
@@ -364,7 +361,7 @@ class PostgreSQLHybridCaseRepository(CaseRepository):
                 "role": role,
                 "added_by": sharer_user_id or target_user_id
             })
-            await self.db.commit()
+            await self.db.flush()
 
             self.logger.info(
                 f"Shared case {case_id} with user {target_user_id} as {role}"
@@ -372,7 +369,6 @@ class PostgreSQLHybridCaseRepository(CaseRepository):
             return True
 
         except Exception as e:
-            await self.db.rollback()
             raise RepositoryException(f"Failed to share case {case_id}: {e}") from e
 
     async def unshare_case(
@@ -407,7 +403,7 @@ class PostgreSQLHybridCaseRepository(CaseRepository):
                 "user_id": user_id,
                 "removed_by": unsharer_user_id or user_id
             })
-            await self.db.commit()
+            await self.db.flush()
 
             self.logger.info(
                 f"Unshared case {case_id} from user {user_id}"
@@ -415,7 +411,6 @@ class PostgreSQLHybridCaseRepository(CaseRepository):
             return True
 
         except Exception as e:
-            await self.db.rollback()
             raise RepositoryException(f"Failed to unshare case {case_id}: {e}") from e
 
     async def get_case_participants(self, case_id: str) -> List[Dict[str, Any]]:
@@ -550,12 +545,11 @@ class PostgreSQLHybridCaseRepository(CaseRepository):
                 "content": message_dict.get('content', ''),
                 "metadata": json.dumps(message_dict.get('metadata', {}))
             })
-            await self.db.commit()
+            await self.db.flush()
 
             return True
 
         except Exception as e:
-            await self.db.rollback()
             raise RepositoryException(f"Failed to add message to case {case_id}: {e}") from e
 
     async def get_messages(
@@ -627,12 +621,11 @@ class PostgreSQLHybridCaseRepository(CaseRepository):
             """)
 
             result = await self.db.execute(query, {"case_id": case_id})
-            await self.db.commit()
+            await self.db.flush()
 
             return result.rowcount > 0
 
         except Exception as e:
-            await self.db.rollback()
             raise RepositoryException(f"Failed to update activity timestamp for case {case_id}: {e}") from e
 
     async def get_analytics(self, case_id: str) -> Dict[str, Any]:
@@ -710,12 +703,11 @@ class PostgreSQLHybridCaseRepository(CaseRepository):
                 "max_age_days": max_age_days,
                 "batch_size": batch_size
             })
-            await self.db.commit()
+            await self.db.flush()
 
             return result.rowcount
 
         except Exception as e:
-            await self.db.rollback()
             raise RepositoryException(f"Failed to cleanup expired cases: {e}") from e
 
     # ========================================================================

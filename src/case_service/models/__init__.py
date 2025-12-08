@@ -1,7 +1,9 @@
 """Models package."""
 
-from .case import Case, CaseStatus, CaseSeverity, CaseCategory
+from fm_core_lib.models import Case, CaseStatus
 from .requests import (
+    CaseSeverity,
+    CaseCategory,
     CaseCreateRequest,
     CaseUpdateRequest,
     CaseStatusUpdateRequest,

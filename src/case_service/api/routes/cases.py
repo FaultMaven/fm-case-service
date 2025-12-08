@@ -24,12 +24,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/cases", tags=["cases"])
 
 
+# Global singleton in-memory repository (persists across requests)
+_inmemory_repository = None
+
 async def get_case_repository() -> "CaseRepository":
     """Dependency to get case repository.
 
     Returns the appropriate repository implementation based on CASE_STORAGE_TYPE
     environment variable:
-    - inmemory (default): InMemoryCaseRepository for dev/testing
+    - inmemory (default): InMemoryCaseRepository singleton for dev/testing
     - postgres: PostgreSQLHybridCaseRepository for production
     """
     import os
@@ -45,8 +48,11 @@ async def get_case_repository() -> "CaseRepository":
         async for session in db_client.get_session():
             yield PostgreSQLHybridCaseRepository(session)
     else:
-        # Default to in-memory for development/testing
-        yield InMemoryCaseRepository()
+        # Default to in-memory singleton for development/testing
+        global _inmemory_repository
+        if _inmemory_repository is None:
+            _inmemory_repository = InMemoryCaseRepository()
+        yield _inmemory_repository
 
 
 async def get_case_manager(
@@ -635,11 +641,13 @@ async def list_cases(
 
     Supports pagination and status filtering.
     """
+    # Convert page-based pagination to offset-based pagination
+    offset = (page - 1) * page_size
     cases, total = await case_manager.list_cases(
         user_id=user_id,
         status=status_filter,
-        page=page,
-        page_size=page_size,
+        limit=page_size,
+        offset=offset,
     )
 
     return CaseListResponse(
@@ -721,18 +729,19 @@ async def get_cases_for_session(
     Note: This returns cases linked to the session, but access control
     is still enforced via the session's user_id.
     """
-    cases, total = await case_manager.list_cases_by_session(
-        session_id=session_id,
-        page=page,
-        page_size=page_size,
-    )
+    # Get all cases for the session (no pagination at manager level)
+    all_cases = await case_manager.get_cases_by_session(session_id=session_id)
 
     # Filter to only cases owned by the authenticated user
-    user_cases = [case for case in cases if case.user_id == user_id]
+    user_cases = [case for case in all_cases if case.user_id == user_id]
+
+    # Apply pagination
+    offset = (page - 1) * page_size
+    paginated_cases = user_cases[offset:offset + page_size]
     user_total = len(user_cases)
 
     return CaseListResponse(
-        cases=[CaseResponse.from_case(case) for case in user_cases],
+        cases=[CaseResponse.from_case(case) for case in paginated_cases],
         total=user_total,
         page=page,
         page_size=page_size,

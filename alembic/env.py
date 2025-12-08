@@ -21,9 +21,6 @@ from alembic import context
 # Add src directory to path to import application modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-# Import SQLAlchemy Base and models
-from case_service.infrastructure.database.models import Base
-
 # Alembic Config object
 config = context.config
 
@@ -31,8 +28,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Target metadata for autogenerate support
-target_metadata = Base.metadata
+# No target metadata - we use manual migrations only (not autogenerate)
+# The 10-table hybrid schema is defined in explicit migration files
+target_metadata = None
 
 # Get DATABASE_URL from environment (deployment neutral)
 database_url = os.getenv("DATABASE_URL")

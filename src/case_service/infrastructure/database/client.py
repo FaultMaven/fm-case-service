@@ -9,7 +9,6 @@ from sqlalchemy import text
 from fm_core_lib.utils import service_startup_retry
 
 from case_service.config import settings
-from .models import Base
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +49,13 @@ class DatabaseClient:
         logger.info("Database connection verified")
 
     async def create_tables(self):
-        """Create all database tables."""
-        async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables created")
+        """Create all database tables via Alembic migrations.
+
+        NOTE: Tables are now managed by Alembic migrations, not ORM.
+        Run 'alembic upgrade head' to create/update database schema.
+        This method is kept for backward compatibility but does nothing.
+        """
+        logger.info("Database tables managed by Alembic migrations")
 
     async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
         """Get database session for dependency injection."""

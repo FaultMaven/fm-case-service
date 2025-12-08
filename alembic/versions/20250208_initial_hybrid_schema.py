@@ -34,12 +34,27 @@ def upgrade() -> None:
     # STEP 1: Drop old single-table schema
     # ========================================================================
 
-    op.drop_index(op.f('ix_cases_created_at'), table_name='cases')
-    op.drop_index(op.f('ix_cases_status'), table_name='cases')
-    op.drop_index(op.f('ix_cases_session_id'), table_name='cases')
-    op.drop_index(op.f('ix_cases_user_id'), table_name='cases')
-    op.drop_index(op.f('ix_cases_case_id'), table_name='cases')
-    op.drop_table('cases')
+    # Drop indexes if they exist (SQLite doesn't support IF EXISTS in Alembic)
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+
+    # Check if table exists
+    if 'cases' in inspector.get_table_names():
+        existing_indexes = [idx['name'] for idx in inspector.get_indexes('cases')]
+
+        # Drop indexes only if they exist
+        if 'ix_cases_created_at' in existing_indexes:
+            op.drop_index(op.f('ix_cases_created_at'), table_name='cases')
+        if 'ix_cases_status' in existing_indexes:
+            op.drop_index(op.f('ix_cases_status'), table_name='cases')
+        if 'ix_cases_session_id' in existing_indexes:
+            op.drop_index(op.f('ix_cases_session_id'), table_name='cases')
+        if 'ix_cases_user_id' in existing_indexes:
+            op.drop_index(op.f('ix_cases_user_id'), table_name='cases')
+        if 'ix_cases_case_id' in existing_indexes:
+            op.drop_index(op.f('ix_cases_case_id'), table_name='cases')
+
+        op.drop_table('cases')
 
     # Drop old enum types (PostgreSQL only)
     # SQLAlchemy will automatically handle enum creation/deletion per database

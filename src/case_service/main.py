@@ -52,6 +52,11 @@ async def startup():
     logger.info(f"Database: {settings.database_url}")
 
     try:
+        # Verify connection with retry logic (handles K8s/scale-to-zero)
+        await db_client.verify_connection()
+
+        # Note: Alembic migrations run in Dockerfile CMD before uvicorn starts
+        # create_tables() is kept for backward compatibility with non-Docker setups
         await db_client.create_tables()
         logger.info("Database initialized successfully")
     except Exception as e:

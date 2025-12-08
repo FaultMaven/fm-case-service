@@ -5,6 +5,7 @@ from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
+from fm_core_lib.utils import service_startup_retry
 
 from case_service.config import settings
 from .models import Base
@@ -34,6 +35,18 @@ class DatabaseClient:
         )
 
         logger.info(f"Database client initialized with URL: {settings.database_url}")
+
+    @service_startup_retry
+    async def verify_connection(self):
+        """Verify database connection with retry logic.
+
+        This is called before migrations/table creation to ensure the database
+        is ready. Retries with exponential backoff for K8s/scale-to-zero scenarios.
+        """
+        async with self.engine.begin() as conn:
+            # Simple query to verify connection works
+            await conn.execute("SELECT 1")
+        logger.info("Database connection verified")
 
     async def create_tables(self):
         """Create all database tables."""

@@ -79,9 +79,11 @@ class CaseResponse(BaseModel):
     @classmethod
     def from_case(cls, case: Case) -> "CaseResponse":
         """Convert Case model to response."""
-        # Extract severity and category from metadata for backward compatibility
-        severity = case.metadata.get("severity", "medium")
-        category = case.metadata.get("category", "other")
+        # Extract severity and category from private attributes (set by repository)
+        # or provide defaults for backward compatibility
+        severity = getattr(case, '_severity', 'medium')
+        category = getattr(case, '_category', 'other')
+        extra_metadata = getattr(case, '_extra_metadata', {})
 
         return cls(
             case_id=case.case_id,
@@ -92,7 +94,7 @@ class CaseResponse(BaseModel):
             status=case.status.value,
             severity=severity,
             category=category,
-            metadata=case.metadata,
+            metadata=extra_metadata,
             tags=[],  # fm-core-lib Case doesn't have top-level tags
             created_at=case.created_at,
             updated_at=case.updated_at,

@@ -57,12 +57,9 @@ class CaseManager:
             sequence = 1
             title = f"Case-{date_suffix}-{sequence}"
 
-        # Prepare metadata with severity and category for backward compatibility
-        metadata = request.metadata.copy()
-        metadata["severity"] = request.severity.value
-        metadata["category"] = request.category.value
-
         # Create Case using fm-core-lib model
+        # NOTE: severity and category are stored in the database metadata column
+        # but are not part of the Python model. The repository handles this mapping.
         case = Case(
             case_id=f"case_{uuid4().hex[:12]}",
             user_id=user_id,
@@ -70,8 +67,12 @@ class CaseManager:
             title=title.strip(),
             description=request.description or "",
             status=CaseStatus.CONSULTING,  # Start in consulting phase
-            metadata=metadata,
         )
+
+        # Store severity/category for backward compatibility (handled by repository)
+        case._severity = request.severity.value  # type: ignore
+        case._category = request.category.value  # type: ignore
+        case._extra_metadata = request.metadata.copy()  # type: ignore
 
         # Save via repository
         saved_case = await self.repository.save(case)
@@ -300,12 +301,13 @@ class CaseManager:
         case.updated_at = datetime.now(timezone.utc)
 
         if close_data:
+            # Store close metadata in private attributes for repository to persist
+            metadata = getattr(case, '_extra_metadata', {})
             if "reason" in close_data:
-                case.metadata = case.metadata or {}
-                case.metadata["close_reason"] = close_data["reason"]
+                metadata["close_reason"] = close_data["reason"]
             if "resolution_notes" in close_data:
-                case.metadata = case.metadata or {}
-                case.metadata["resolution_notes"] = close_data["resolution_notes"]
+                metadata["resolution_notes"] = close_data["resolution_notes"]
+            case._extra_metadata = metadata  # type: ignore
 
         return await self.repository.save(case)
 

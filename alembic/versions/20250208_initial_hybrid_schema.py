@@ -195,7 +195,7 @@ def upgrade() -> None:
         sa.Column('description', sa.Text(), nullable=False),
         sa.Column('status', hypothesis_status, nullable=False, server_default='proposed'),
         sa.Column('confidence_score', sa.Numeric(precision=3, scale=2), nullable=True),
-        sa.Column('supporting_evidence_ids', postgresql.ARRAY(sa.Text()), nullable=True),
+        sa.Column('supporting_evidence_ids', sa.JSON(), nullable=True),  # PostgreSQL: ARRAY, SQLite: JSON
         sa.Column('validation_result', sa.Text(), nullable=True),
         sa.Column('validation_timestamp', sa.DateTime(timezone=True), nullable=True),
         sa.Column('proposed_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
@@ -218,7 +218,7 @@ def upgrade() -> None:
         sa.Column('case_id', sa.String(length=17), nullable=False),
         sa.Column('description', sa.Text(), nullable=False),
         sa.Column('status', solution_status, nullable=False, server_default='proposed'),
-        sa.Column('implementation_steps', postgresql.ARRAY(sa.Text()), nullable=True),
+        sa.Column('implementation_steps', sa.JSON(), nullable=True),  # PostgreSQL: ARRAY, SQLite: JSON
         sa.Column('risk_level', sa.String(length=20), nullable=True),
         sa.Column('estimated_effort', sa.String(length=50), nullable=True),
         sa.Column('verification_result', sa.Text(), nullable=True),

@@ -5,6 +5,7 @@ from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
+from sqlalchemy import text
 from fm_core_lib.utils import service_startup_retry
 
 from case_service.config import settings
@@ -45,7 +46,7 @@ class DatabaseClient:
         """
         async with self.engine.begin() as conn:
             # Simple query to verify connection works
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         logger.info("Database connection verified")
 
     async def create_tables(self):

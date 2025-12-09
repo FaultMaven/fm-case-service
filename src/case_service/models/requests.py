@@ -30,27 +30,47 @@ class CaseCategory(str, Enum):
 
 
 class CaseCreateRequest(BaseModel):
-    """Request to create a new case."""
+    """Request to create a new case.
+
+    Supports both frontend (priority) and backend (severity) field names.
+    Frontend sends: title, priority, metadata, initial_message
+    """
 
     title: Optional[str] = Field(None, max_length=200)
     description: Optional[str] = Field(default="")
     session_id: Optional[str] = None
-    severity: CaseSeverity = Field(default=CaseSeverity.MEDIUM)
+    priority: Optional[CaseSeverity] = None  # Frontend uses priority
+    severity: Optional[CaseSeverity] = None  # Legacy backend field
     category: CaseCategory = Field(default=CaseCategory.OTHER)
     metadata: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
+    initial_message: Optional[str] = None  # Frontend sends initial query message
+
+    @property
+    def effective_severity(self) -> CaseSeverity:
+        """Get effective severity, preferring priority over severity."""
+        return self.priority or self.severity or CaseSeverity.MEDIUM
 
 
 class CaseUpdateRequest(BaseModel):
-    """Request to update a case."""
+    """Request to update a case.
+
+    Supports both frontend (priority) and backend (severity) field names.
+    """
 
     title: Optional[str] = Field(None, max_length=200)
     description: Optional[str] = None
     status: Optional[CaseStatus] = None
-    severity: Optional[CaseSeverity] = None
+    priority: Optional[CaseSeverity] = None  # Frontend uses priority
+    severity: Optional[CaseSeverity] = None  # Legacy backend field
     category: Optional[CaseCategory] = None
     metadata: Optional[Dict[str, Any]] = None
     tags: Optional[List[str]] = None
+
+    @property
+    def effective_severity(self) -> Optional[CaseSeverity]:
+        """Get effective severity, preferring priority over severity."""
+        return self.priority or self.severity
 
 
 class CaseStatusUpdateRequest(BaseModel):
@@ -60,21 +80,29 @@ class CaseStatusUpdateRequest(BaseModel):
 
 
 class CaseResponse(BaseModel):
-    """Response containing a single case."""
+    """Response containing a single case.
+
+    Matches frontend UserCase interface expectations:
+    - owner_id: Required field (mapped from user_id)
+    - priority: Optional field (mapped from severity in metadata)
+    - message_count: Optional field (number of turns)
+    """
 
     case_id: str
-    user_id: str
+    owner_id: str  # Frontend expects owner_id (mapped from user_id)
     session_id: Optional[str] = None  # Deprecated, kept for backward compatibility
     title: str
     description: str
     status: str
-    severity: str
-    category: str
+    priority: Optional[str] = None  # Frontend uses priority (mapped from severity)
+    severity: Optional[str] = None  # Legacy field for backward compatibility
+    category: Optional[str] = None  # Legacy field for backward compatibility
     metadata: Dict[str, Any]
     tags: List[str]
     created_at: datetime
     updated_at: datetime
     resolved_at: Optional[datetime]
+    message_count: Optional[int] = None  # Number of messages/turns in the case
 
     @classmethod
     def from_case(cls, case: Case) -> "CaseResponse":
@@ -89,20 +117,25 @@ class CaseResponse(BaseModel):
         response_metadata = {k: v for k, v in case.metadata.items()
                            if k not in ("severity", "category")}
 
+        # Calculate message count from turn history
+        message_count = len(case.turn_history) if case.turn_history else None
+
         return cls(
             case_id=case.case_id,
-            user_id=case.user_id,
+            owner_id=case.user_id,  # Map user_id to owner_id for frontend
             session_id=None,  # No longer used
             title=case.title,
             description=case.description,
             status=case.status.value,
-            severity=severity,
+            priority=severity,  # Map severity to priority for frontend
+            severity=severity,  # Keep for backward compatibility
             category=category,
             metadata=response_metadata,
             tags=[],  # fm-core-lib Case doesn't have top-level tags
             created_at=case.created_at,
             updated_at=case.updated_at,
             resolved_at=case.resolved_at,
+            message_count=message_count,
         )
 
 

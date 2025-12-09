@@ -59,7 +59,7 @@ class CaseManager:
 
         # Prepare metadata with severity and category for backward compatibility
         metadata = request.metadata.copy()
-        metadata["severity"] = request.severity.value
+        metadata["severity"] = request.effective_severity.value
         metadata["category"] = request.category.value
 
         # Create Case using fm-core-lib model

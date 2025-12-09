@@ -2,7 +2,7 @@
 
 from fm_core_lib.models import Case, CaseStatus
 from .requests import (
-    CaseSeverity,
+    CasePriority,
     CaseCategory,
     CaseCreateRequest,
     CaseUpdateRequest,
@@ -15,7 +15,7 @@ from .requests import (
 __all__ = [
     "Case",
     "CaseStatus",
-    "CaseSeverity",
+    "CasePriority",
     "CaseCategory",
     "CaseCreateRequest",
     "CaseUpdateRequest",

@@ -132,21 +132,18 @@ async def get_case_service_health() -> Dict[str, Any]:
 Creates a new troubleshooting case for the authenticated user.
 
 **Workflow**:
-1. Case created in 'active' status with auto-generated ID (case_XXXX format)
+1. Case created in 'consulting' status with auto-generated ID (case_XXXX format)
 2. Title auto-generated if not provided (Case-MMDD-N format)
-3. Optional session linking for associating with investigation sessions
-4. User can specify severity, category, metadata, and tags
+3. User can specify priority, category, and metadata
 
 **Request Body Example**:
 ```json
 {
   "title": "Redis connection timeouts in production",
   "description": "Intermittent timeouts on Redis cluster during peak hours",
-  "severity": "high",
+  "priority": "high",
   "category": "performance",
-  "session_id": "session_abc123",
-  "metadata": {"environment": "production", "cluster": "redis-prod-1"},
-  "tags": ["redis", "timeout", "performance"]
+  "metadata": {"environment": "production", "cluster": "redis-prod-1"}
 }
 ```
 
@@ -154,18 +151,17 @@ Creates a new troubleshooting case for the authenticated user.
 ```json
 {
   "case_id": "case_a1b2c3d4e5f6",
-  "user_id": "user_123",
-  "session_id": "session_abc123",
+  "owner_id": "user_123",
   "title": "Redis connection timeouts in production",
   "description": "Intermittent timeouts on Redis cluster during peak hours",
-  "status": "active",
-  "severity": "high",
+  "status": "consulting",
+  "priority": "high",
   "category": "performance",
   "metadata": {"environment": "production", "cluster": "redis-prod-1"},
-  "tags": ["redis", "timeout", "performance"],
   "created_at": "2025-11-19T10:30:00Z",
   "updated_at": "2025-11-19T10:30:00Z",
-  "resolved_at": null
+  "resolved_at": null,
+  "message_count": 0
 }
 ```
 
@@ -285,20 +281,18 @@ Updates an existing case with new information. All fields are optional.
 **Updatable Fields**:
 - `title`: Case title (max 200 characters)
 - `description`: Detailed description
-- `status`: Case status (active/investigating/resolved/archived/closed)
-- `severity`: Severity level (low/medium/high/critical)
+- `status`: Case status (consulting/investigating/resolved/closed)
+- `priority`: Priority level (low/medium/high/critical)
 - `category`: Category (performance/error/configuration/infrastructure/security/other)
 - `metadata`: Custom metadata dictionary (merged with existing)
-- `tags`: Tag list (replaces existing tags)
 
 **Request Example**:
 ```json
 {
   "status": "investigating",
-  "severity": "critical",
+  "priority": "critical",
   "description": "Issue escalated - affecting 50% of users",
-  "metadata": {"escalated": true, "affected_users": 500},
-  "tags": ["redis", "timeout", "critical", "escalated"]
+  "metadata": {"escalated": true, "affected_users": 500}
 }
 ```
 
@@ -307,7 +301,7 @@ Updates an existing case with new information. All fields are optional.
 {
   "case_id": "case_a1b2c3d4e5f6",
   "status": "investigating",
-  "severity": "critical",
+  "priority": "critical",
   "updated_at": "2025-11-19T12:30:00Z",
   ...
 }
@@ -459,7 +453,7 @@ async def get_case_ui(
             "title": case.title,
             "description": case.description,
             "status": case.status.value if hasattr(case.status, 'value') else case.status,
-            "severity": case.severity.value if hasattr(case.severity, 'value') else case.severity,
+            "priority": case.metadata.get("priority", "medium"),
             "created_at": case.created_at.isoformat() if hasattr(case.created_at, 'isoformat') else case.created_at,
             "updated_at": case.updated_at.isoformat() if hasattr(case.updated_at, 'isoformat') else case.updated_at,
             "note": "Full UI adapter pending implementation"
@@ -593,7 +587,7 @@ Headers:
       "case_id": "case_a1b2c3d4e5f6",
       "title": "Redis timeout issue",
       "status": "investigating",
-      "severity": "high",
+      "priority": "high",
       "created_at": "2025-11-19T10:30:00Z",
       ...
     },
@@ -601,7 +595,7 @@ Headers:
       "case_id": "case_x7y8z9a0b1c2",
       "title": "API latency spike",
       "status": "investigating",
-      "severity": "medium",
+      "priority": "medium",
       "created_at": "2025-11-18T14:20:00Z",
       ...
     }

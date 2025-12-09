@@ -57,9 +57,9 @@ class CaseManager:
             sequence = 1
             title = f"Case-{date_suffix}-{sequence}"
 
-        # Prepare metadata with severity and category for backward compatibility
+        # Prepare metadata with priority and category
         metadata = request.metadata.copy()
-        metadata["severity"] = request.effective_severity.value
+        metadata["priority"] = request.priority.value
         metadata["category"] = request.category.value
 
         # Create Case using fm-core-lib model

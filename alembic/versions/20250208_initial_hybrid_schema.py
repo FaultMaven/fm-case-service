@@ -104,6 +104,12 @@ def upgrade() -> None:
         create_type=True
     )
 
+    investigation_strategy = sa.Enum(
+        'active_incident', 'post_mortem',
+        name='investigation_strategy',
+        create_type=True
+    )
+
     # ========================================================================
     # STEP 3: Create core cases table
     # ========================================================================
@@ -117,10 +123,12 @@ def upgrade() -> None:
         sa.Column('user_id', sa.String(length=255), nullable=False),
         sa.Column('organization_id', sa.String(length=255), nullable=False),
         sa.Column('title', sa.String(length=200), nullable=False),
+        sa.Column('description', sa.Text(), nullable=False, server_default=''),
         sa.Column('status', case_status, nullable=False, server_default='consulting'),
+        sa.Column('investigation_strategy', investigation_strategy, nullable=False, server_default='post_mortem'),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.Column('last_activity_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('last_activity_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
         sa.Column('resolved_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('closed_at', sa.DateTime(timezone=True), nullable=True),
 

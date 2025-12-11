@@ -3,7 +3,6 @@
 from fm_core_lib.models import Case, CaseStatus
 from .requests import (
     CasePriority,
-    CaseCategory,
     CaseCreateRequest,
     CaseUpdateRequest,
     CaseStatusUpdateRequest,
@@ -16,7 +15,6 @@ __all__ = [
     "Case",
     "CaseStatus",
     "CasePriority",
-    "CaseCategory",
     "CaseCreateRequest",
     "CaseUpdateRequest",
     "CaseStatusUpdateRequest",

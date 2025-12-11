@@ -57,10 +57,9 @@ class CaseManager:
             sequence = 1
             title = f"Case-{date_suffix}-{sequence}"
 
-        # Prepare metadata with priority and category
+        # Prepare metadata with priority
         metadata = request.metadata.copy()
         metadata["priority"] = request.priority.value
-        metadata["category"] = request.category.value
 
         # Create Case using fm-core-lib model
         case = Case(

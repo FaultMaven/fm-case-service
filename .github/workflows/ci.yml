@@ -83,7 +83,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          poetry run pytest tests/unit/ -v --tb=short --cov=session_service --cov-report=term-missing
+          poetry run pytest tests/unit/ -v --tb=short --cov=case_service --cov-report=term-missing
 
   smoke:
     name: Smoke Test
@@ -109,18 +109,13 @@ jobs:
 
       - name: Start service container
         run: |
-
-      - name: Start service container
-        run: |
           docker run -d \
             --name smoke-service-${{ github.sha }} \
             --network smoke-net-${{ github.sha }} \
             -p 8003:8000 \
             -e DATABASE_URL=sqlite+aiosqlite:////data/cases.db \
-            -e  \ \
-            -e  \ \
-            -e  \
-            -e  \
+            -e ENVIRONMENT=development \
+            -e LOG_LEVEL=INFO \
             ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
 
       - name: Wait for service health
@@ -128,7 +123,7 @@ jobs:
           max_attempts=30
           attempt=0
           while [ $attempt -lt $max_attempts ]; do
-            if curl -f http://localhost:8002/health; then
+            if curl -f http://localhost:8003/health; then
               echo "Service is healthy"
               exit 0
             fi
@@ -143,6 +138,8 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
+          docker stop smoke-service-${{ github.sha }} || true
+          docker rm smoke-service-${{ github.sha }} || true
           docker network rm smoke-net-${{ github.sha }} || true
 
   push:

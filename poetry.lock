@@ -1251,12 +1251,12 @@ pyflakes = ">=3.1.0,<3.2.0"
 
 [[package]]
 name = "fm-core-lib"
-version = "0.2.1"
+version = "0.3.0"
 description = "FaultMaven Core Library - Shared models, LLM infrastructure, and preprocessing logic"
 optional = false
 python-versions = ">=3.11"
 files = []
-develop = false
+develop = true
 
 [package.dependencies]
 anthropic = ">=0.25.0"
@@ -1272,6 +1272,7 @@ pandas = ">=1.5.0"
 pydantic = ">=2.6,<2.10"
 pydantic-settings = ">=2.3.0"
 python-dotenv = ">=1.0.1"
+redis = ">=5.0.0"
 requests = ">=2.31.0"
 tenacity = ">=8.3.0"
 tiktoken = ">=0.5.0"
@@ -1281,10 +1282,8 @@ typing-extensions = ">=4.12.2"
 dev = ["black (>=23.7.0)", "mypy (>=1.5.0)", "pytest (>=7.4.0)", "pytest-asyncio (>=0.21.0)", "pytest-cov (>=4.1.0)", "ruff (>=0.0.285)"]
 
 [package.source]
-type = "git"
-url = "https://github.com/FaultMaven/fm-core-lib.git"
-reference = "main"
-resolved_reference = "b55b6fa4763da58528021cdcca02024ae5ca43f4"
+type = "directory"
+url = "../fm-core-lib"
 
 [[package]]
 name = "frozenlist"
@@ -4053,6 +4052,26 @@ files = [
 ]
 
 [[package]]
+name = "redis"
+version = "7.1.0"
+description = "Python client for Redis database and key-value store"
+optional = false
+python-versions = ">=3.10"
+files = [
+    {file = "redis-7.1.0-py3-none-any.whl", hash = "sha256:23c52b208f92b56103e17c5d06bdc1a6c2c0b3106583985a76a18f83b265de2b"},
+    {file = "redis-7.1.0.tar.gz", hash = "sha256:b1cc3cfa5a2cb9c2ab3ba700864fb0ad75617b41f01352ce5779dabf6d5f9c3c"},
+]
+
+[package.dependencies]
+async-timeout = {version = ">=4.0.3", markers = "python_full_version < \"3.11.3\""}
+
+[package.extras]
+circuit-breaker = ["pybreaker (>=1.4.0)"]
+hiredis = ["hiredis (>=3.2.0)"]
+jwt = ["pyjwt (>=2.9.0)"]
+ocsp = ["cryptography (>=36.0.1)", "pyopenssl (>=20.0.1)", "requests (>=2.31.0)"]
+
+[[package]]
 name = "regex"
 version = "2025.11.3"
 description = "Alternative regular expression module, to replace re."
@@ -5398,4 +5417,4 @@ cffi = ["cffi (>=1.17,<2.0)", "cffi (>=2.0.0b)"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "da4b1bc74d373c11245c2b459b363875b425c405b42eff318b5aaef39031e3c1"
+content-hash = "287c87b7562779f0fe3f33fc3c3e059eb0ae5ce7f6b7cd61fa87baed394fd09d"

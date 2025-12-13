@@ -1,7 +1,8 @@
 # FaultMaven Case Service - PUBLIC Open Source Version
 # Apache 2.0 License
 
-FROM python:3.11-slim
+# Stage 1: Builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
@@ -10,16 +11,30 @@ RUN pip install --no-cache-dir poetry==1.7.0
 
 # Copy fm-core-lib first (required dependency)
 COPY fm-core-lib/ ./fm-core-lib/
+
+# Copy dependency files
+COPY pyproject.toml poetry.lock* ./
+
+# Export dependencies to requirements.txt (no dev dependencies)
+RUN poetry export -f requirements.txt --output requirements.txt --without-hashes --without dev
+
+# Stage 2: Runtime
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+COPY --from=builder /app/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install fm-core-lib
+COPY --from=builder /app/fm-core-lib/ ./fm-core-lib/
 RUN pip install --no-cache-dir ./fm-core-lib
 
-# Copy dependency files and install
-COPY fm-case-service/pyproject.toml ./
-RUN poetry config virtualenvs.create false && poetry install --no-dev --no-interaction --no-ansi --no-root
-
 # Copy source code and migrations
-COPY fm-case-service/src/ ./src/
-COPY fm-case-service/alembic/ ./alembic/
-COPY fm-case-service/alembic.ini ./
+COPY src/ ./src/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
 
 # Create data directory for SQLite database
 RUN mkdir -p /data && chmod 777 /data

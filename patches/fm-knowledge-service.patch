@@ -1,0 +1,1543 @@
+From 0028277df985087a262ceb3d7f834e16956d028c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 15 Dec 2025 03:04:16 +0000
+Subject: [PATCH] feat: implement automated documentation workflow
+
+- Add GitHub Actions workflow for auto-generating OpenAPI docs
+- Create scripts/generate_readme.py for comprehensive README generation
+- Enhance all endpoint docstrings with:
+  - Detailed workflow descriptions
+  - Request/response examples
+  - Storage markers (SQLite + ChromaDB)
+  - Authorization requirements
+  - Comprehensive response codes (200/201/204/401/404/422/500/501)
+- Enhanced endpoints:
+  - main.py: / and /health
+  - documents.py: All CRUD, bulk operations, search, collections
+  - search.py: Semantic search and similar documents
+
+Pattern follows gold standard from fm-case-service for consistency.
+---
+ .github/workflows/generate-docs.yml           | 214 ++++++++
+ scripts/generate_readme.py                    | 425 +++++++++++++++
+ src/knowledge_service/api/routes/documents.py | 508 +++++++++++++++++-
+ src/knowledge_service/api/routes/search.py    | 129 ++++-
+ src/knowledge_service/main.py                 |  80 ++-
+ 5 files changed, 1337 insertions(+), 19 deletions(-)
+ create mode 100644 .github/workflows/generate-docs.yml
+ create mode 100644 scripts/generate_readme.py
+
+diff --git a/.github/workflows/generate-docs.yml b/.github/workflows/generate-docs.yml
+new file mode 100644
+index 0000000..fa93803
+--- /dev/null
++++ b/.github/workflows/generate-docs.yml
+@@ -0,0 +1,214 @@
++name: Generate Documentation
++
++on:
++  push:
++    branches: [main, develop]
++    paths:
++      - 'src/**/api/**'              # API routes
++      - 'src/**/models/**'           # Pydantic models
++      - 'src/**/main.py'             # App entry point
++      - 'scripts/generate_readme.py' # README generator
++      - 'pyproject.toml'             # Version changes
++  pull_request:
++    branches: [main]
++    paths:
++      - 'src/**/api/**'
++      - 'src/**/models/**'
++      - 'src/**/main.py'
++      - 'scripts/generate_readme.py'
++      - 'pyproject.toml'
++  workflow_dispatch:  # Allow manual trigger for initial setup or debugging
++
++jobs:
++  generate-docs:
++    runs-on: ubuntu-latest
++
++    steps:
++      - name: Checkout code
++        uses: actions/checkout@v4
++        with:
++          fetch-depth: 0  # Full history for better git operations
++
++      - name: Set up Python
++        uses: actions/setup-python@v4
++        with:
++          python-version: '3.13'
++          cache: 'pip'
++
++      - name: Install dependencies
++        run: |
++          python -m pip install --upgrade pip
++          pip install -e .
++          pip install pyyaml
++
++      - name: Generate OpenAPI Specification
++        run: |
++          python -c "
++          from knowledge_service.main import app
++          import json
++          import yaml
++          import os
++
++          # Generate OpenAPI spec
++          spec = app.openapi()
++
++          # Create docs directory
++          os.makedirs('docs/api', exist_ok=True)
++
++          # Write JSON spec
++          with open('docs/api/openapi.json', 'w') as f:
++              json.dump(spec, f, indent=2)
++
++          # Write YAML spec
++          with open('docs/api/openapi.yaml', 'w') as f:
++              yaml.dump(spec, f, default_flow_style=False, sort_keys=False)
++
++          print('✅ OpenAPI specification generated')
++          print(f'  - docs/api/openapi.json ({os.path.getsize(\"docs/api/openapi.json\")} bytes)')
++          print(f'  - docs/api/openapi.yaml ({os.path.getsize(\"docs/api/openapi.yaml\")} bytes)')
++          "
++
++      - name: Validate Documentation Completeness
++        run: |
++          python -c "
++          from knowledge_service.main import app
++          import sys
++
++          spec = app.openapi()
++          incomplete = []
++          warnings = []
++          endpoints_checked = 0
++
++          # Required response codes that should be documented
++          REQUIRED_SUCCESS_CODES = {'200', '201', '204'}
++          REQUIRED_ERROR_CODES = {'400', '401', '404', '422', '500'}
++
++          # Minimum description length for comprehensive docs (chars)
++          MIN_DESCRIPTION_LENGTH = 100
++
++          # Check all endpoints for required documentation
++          for path, methods in spec.get('paths', {}).items():
++              for method, details in methods.items():
++                  if method.lower() in ['get', 'post', 'put', 'delete', 'patch']:
++                      endpoints_checked += 1
++                      endpoint_id = f'{method.upper()} {path}'
++
++                      # Check for summary
++                      summary = details.get('summary', '').strip()
++                      if not summary:
++                          incomplete.append(f'{endpoint_id} - missing summary')
++
++                      # Check for description
++                      description = details.get('description', '').strip()
++                      if not description:
++                          incomplete.append(f'{endpoint_id} - missing description')
++                      elif len(description) < MIN_DESCRIPTION_LENGTH:
++                          incomplete.append(f'{endpoint_id} - description too short ({len(description)} chars, min {MIN_DESCRIPTION_LENGTH})')
++
++                      # Check for responses dict
++                      responses = details.get('responses', {})
++                      if not responses:
++                          incomplete.append(f'{endpoint_id} - missing responses')
++                      else:
++                          response_codes = set(responses.keys())
++
++                          # Check for at least one success code
++                          if not response_codes.intersection(REQUIRED_SUCCESS_CODES):
++                              incomplete.append(f'{endpoint_id} - missing success response (200/201/204)')
++
++                          # Check for 401 (auth required for most endpoints)
++                          if '401' not in response_codes and '/health' not in path:
++                              warnings.append(f'{endpoint_id} - missing 401 response')
++
++                          # Check for 500 (internal error)
++                          if '500' not in response_codes and '/health' not in path:
++                              warnings.append(f'{endpoint_id} - missing 500 response')
++
++          print(f'📊 Documentation Validation Report')
++          print(f'  Total endpoints checked: {endpoints_checked}')
++          print()
++
++          if warnings:
++              print(f'⚠️  Warnings: {len(warnings)}')
++              for item in warnings:
++                  print(f'    - {item}')
++              print()
++
++          if incomplete:
++              print(f'❌ Incomplete documentation: {len(incomplete)} issue(s)')
++              print()
++              print('Errors (must fix):')
++              for item in incomplete:
++                  print(f'  - {item}')
++              print()
++              print('Documentation requirements:')
++              print('  - summary: One-line description (required)')
++              print('  - description: Comprehensive docs with examples, workflow, auth info (min 100 chars)')
++              print('  - responses: Dict with success (200/201/204) and error codes (400/401/404/500)')
++              sys.exit(1)
++          else:
++              print(f'✅ All {endpoints_checked} endpoints fully documented')
++              if warnings:
++                  print(f'   (with {len(warnings)} non-blocking warnings)')
++          "
++
++      - name: Generate README
++        run: |
++          python scripts/generate_readme.py
++          echo "✅ README.md generated"
++
++      - name: Check for documentation changes
++        id: check_changes
++        run: |
++          git add docs/api/*.json docs/api/*.yaml README.md
++          if git diff --staged --quiet; then
++            echo "has_changes=false" >> $GITHUB_OUTPUT
++            echo "📝 No documentation changes detected"
++          else
++            echo "has_changes=true" >> $GITHUB_OUTPUT
++            echo "📝 Documentation changes detected"
++            git diff --staged --stat
++          fi
++
++      - name: Create Pull Request for documentation updates
++        if: |
++          github.event_name == 'push' &&
++          github.ref == 'refs/heads/main' &&
++          steps.check_changes.outputs.has_changes == 'true'
++        uses: peter-evans/create-pull-request@v5
++        with:
++          token: ${{ secrets.GITHUB_TOKEN }}
++          commit-message: "docs: Auto-generate API documentation"
++          branch: docs/auto-update-${{ github.run_id }}
++          delete-branch: true
++          title: "docs: Auto-update API documentation"
++          body: |
++            ## 🤖 Auto-generated Documentation Update
++
++            This PR was automatically created by the documentation workflow.
++
++            ### Changes
++            - Updated OpenAPI specification (JSON + YAML)
++            - Regenerated README.md from code
++
++            ### Trigger
++            - **Commit:** ${{ github.sha }}
++            - **Message:** ${{ github.event.head_commit.message }}
++            - **Author:** ${{ github.event.head_commit.author.name }}
++
++            ### Validation
++            ✅ All endpoints have required documentation (summary, description, responses)
++
++            ---
++            *This PR can be auto-merged if documentation looks correct.*
++          labels: |
++            documentation
++            automated
++          reviewers: ${{ github.actor }}
++
++      - name: Upload OpenAPI spec as artifact
++        uses: actions/upload-artifact@v3
++        with:
++          name: openapi-spec
++          path: docs/api/
++          retention-days: 30
+diff --git a/scripts/generate_readme.py b/scripts/generate_readme.py
+new file mode 100644
+index 0000000..7d5d37d
+--- /dev/null
++++ b/scripts/generate_readme.py
+@@ -0,0 +1,425 @@
++#!/usr/bin/env python3
++"""Auto-generate README.md from OpenAPI specification.
++
++This script reads the OpenAPI spec generated from FastAPI and creates
++a comprehensive README with endpoint documentation, examples, and statistics.
++"""
++
++import json
++from pathlib import Path
++from datetime import datetime
++from typing import Dict, List, Set, Any
++
++
++def load_openapi_spec() -> Dict[str, Any]:
++    """Load OpenAPI spec from docs/api/openapi.json"""
++    spec_path = Path(__file__).parent.parent / "docs" / "api" / "openapi.json"
++
++    if not spec_path.exists():
++        raise FileNotFoundError(
++            f"OpenAPI spec not found at {spec_path}. "
++            "Run the app to generate it first."
++        )
++
++    with open(spec_path, 'r') as f:
++        return json.load(f)
++
++
++def generate_endpoint_table(spec: Dict[str, Any]) -> str:
++    """Generate markdown table of endpoints"""
++    endpoints = []
++
++    for path, methods in spec.get('paths', {}).items():
++        for method, details in methods.items():
++            if method.lower() in ['get', 'post', 'put', 'delete', 'patch']:
++                # Extract summary or use path as fallback
++                summary = details.get('summary', path)
++
++                endpoints.append({
++                    'method': method.upper(),
++                    'path': path,
++                    'summary': summary
++                })
++
++    # Sort endpoints: health first, then by path
++    def sort_key(e):
++        if e['path'] == '/health':
++            return (0, '')
++        return (1, e['path'])
++
++    endpoints.sort(key=sort_key)
++
++    # Build markdown table
++    table = "| Method | Endpoint | Description |\n"
++    table += "|--------|----------|-------------|\n"
++
++    for endpoint in endpoints:
++        table += f"| {endpoint['method']} | `{endpoint['path']}` | {endpoint['summary']} |\n"
++
++    return table
++
++
++def extract_response_codes(spec: Dict[str, Any]) -> Dict[str, Set[str]]:
++    """Extract unique response codes and their descriptions across all endpoints"""
++    response_info = {}
++
++    for path, methods in spec.get('paths', {}).items():
++        for method, details in methods.items():
++            if method.lower() in ['get', 'post', 'put', 'delete', 'patch']:
++                for code, response_details in details.get('responses', {}).items():
++                    desc = response_details.get('description', 'No description')
++                    if code not in response_info:
++                        response_info[code] = set()
++                    response_info[code].add(desc)
++
++    return response_info
++
++
++def generate_response_codes_section(spec: Dict[str, Any]) -> str:
++    """Generate response codes documentation"""
++    response_info = extract_response_codes(spec)
++
++    if not response_info:
++        return ""
++
++    section = "\n## Common Response Codes\n\n"
++
++    # Sort codes numerically
++    for code in sorted(response_info.keys(), key=lambda x: int(x)):
++        descriptions = list(response_info[code])
++        section += f"- **{code}**: {descriptions[0]}\n"
++
++    return section
++
++
++def count_endpoints(spec: Dict[str, Any]) -> int:
++    """Count total number of endpoints"""
++    count = 0
++    for path, methods in spec.get('paths', {}).items():
++        for method in methods.keys():
++            if method.lower() in ['get', 'post', 'put', 'delete', 'patch']:
++                count += 1
++    return count
++
++
++def main():
++    """Generate README.md from OpenAPI specification"""
++    print("🚀 Generating README.md from OpenAPI specification...")
++
++    # Load spec
++    spec = load_openapi_spec()
++
++    # Extract metadata
++    info = spec.get('info', {})
++    title = info.get('title', 'fm-knowledge-service')
++    version = info.get('version', '1.0.0')
++    description = info.get('description', 'Microservice for knowledge base management with RAG')
++
++    # Generate sections
++    endpoint_table = generate_endpoint_table(spec)
++    response_codes = generate_response_codes_section(spec)
++    total_endpoints = count_endpoints(spec)
++    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
++
++    # Build README content
++    readme_content = f"""# {title}
++
++> **🤖 This README is auto-generated** from code on every commit.
++> Last updated: **{timestamp}** | Total endpoints: **{total_endpoints}**
++
++[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
++[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://hub.docker.com/r/faultmaven/fm-knowledge-service)
++[![Auto-Docs](https://img.shields.io/badge/docs-auto--generated-success.svg)](.github/workflows/generate-docs.yml)
++
++## Overview
++
++**{description}** - Part of the FaultMaven troubleshooting platform.
++
++The Knowledge Service provides semantic search and RAG (Retrieval-Augmented Generation) capabilities for troubleshooting documentation. It stores and indexes documents using ChromaDB vector database, enabling intelligent retrieval of relevant knowledge during investigations.
++
++**Key Features:**
++- **Document Management**: Create, read, update, and delete knowledge documents
++- **Semantic Search**: Find relevant documents using vector similarity search
++- **Vector Storage**: ChromaDB integration for efficient embedding storage and retrieval
++- **RAG Support**: Provides context for AI-powered troubleshooting assistance
++- **User Isolation**: Each user only sees their own documents (enforced via X-User-ID header)
++- **Document Types**: Support for various document types (runbook, kb_article, diagnostic, solution, etc.)
++- **Metadata & Tags**: Rich metadata and tagging for better organization
++- **Bulk Operations**: Batch updates and deletions for efficient management
++- **Analytics**: Search analytics and knowledge base statistics
++
++## Quick Start
++
++### Using Docker (Recommended)
++
++```bash
++docker run -p 8002:8002 \\
++  -v ./data:/data \\
++  -v ./chromadb:/chromadb \\
++  faultmaven/fm-knowledge-service:latest
++```
++
++The service will be available at `http://localhost:8002`. Data persists in the `./data` and `./chromadb` directories.
++
++### Using Docker Compose
++
++See [faultmaven-deploy](https://github.com/FaultMaven/faultmaven-deploy) for complete deployment with all FaultMaven services.
++
++### Development Setup
++
++```bash
++# Clone repository
++git clone https://github.com/FaultMaven/fm-knowledge-service.git
++cd fm-knowledge-service
++
++# Create virtual environment
++python -m venv .venv
++source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate
++
++# Install dependencies
++pip install -e .
++
++# Run service
++uvicorn knowledge_service.main:app --reload --port 8002
++```
++
++The service creates a SQLite database at `./fm_knowledge.db` and ChromaDB storage at `./chromadb` on first run.
++
++## API Endpoints
++
++{endpoint_table}
++
++**OpenAPI Documentation**: See [docs/api/openapi.json](docs/api/openapi.json) or [docs/api/openapi.yaml](docs/api/openapi.yaml) for complete API specification.
++{response_codes}
++
++## Configuration
++
++Configuration via environment variables:
++
++| Variable | Description | Default |
++|----------|-------------|---------|
++| `SERVICE_NAME` | Service identifier | `fm-knowledge-service` |
++| `ENVIRONMENT` | Deployment environment | `development` |
++| `HOST` | Service host | `0.0.0.0` |
++| `PORT` | Service port | `8002` |
++| `DATABASE_URL` | Database connection string | `sqlite+aiosqlite:///./fm_knowledge.db` |
++| `CHROMA_HOST` | ChromaDB host | `localhost` |
++| `CHROMA_PORT` | ChromaDB port | `8000` |
++| `CHROMA_COLLECTION_NAME` | Vector collection name | `knowledge_base` |
++| `EMBEDDING_MODEL` | Sentence transformer model | `all-MiniLM-L6-v2` |
++| `LOG_LEVEL` | Logging level (DEBUG/INFO/WARNING/ERROR) | `INFO` |
++
++Example `.env` file:
++
++```env
++ENVIRONMENT=production
++PORT=8002
++DATABASE_URL=sqlite+aiosqlite:///./data/fm_knowledge.db
++CHROMA_HOST=chromadb
++CHROMA_PORT=8000
++LOG_LEVEL=INFO
++```
++
++## Document Data Model
++
++Example Document Object:
++
++```json
++{{
++    "document_id": "doc_abc123def456",
++    "user_id": "user_123",
++    "title": "PostgreSQL Connection Pooling Best Practices",
++    "content": "When configuring PostgreSQL connection pools...",
++    "document_type": "kb_article",
++    "metadata": {{"category": "database", "difficulty": "intermediate"}},
++    "tags": ["postgresql", "connection-pooling", "performance"],
++    "source_url": "https://docs.example.com/postgres-pooling",
++    "created_at": "2025-11-15T10:30:00Z",
++    "updated_at": "2025-11-15T12:45:00Z"
++}}
++```
++
++### Document Types
++- `runbook` - Step-by-step operational procedures
++- `kb_article` - Knowledge base articles
++- `diagnostic` - Diagnostic guides and flowcharts
++- `solution` - Documented solutions to known issues
++- `reference` - Reference documentation
++- `other` - Uncategorized documents
++
++## Authorization
++
++This service uses **trusted header authentication** from the FaultMaven API Gateway:
++
++**Required Headers:**
++
++- `X-User-ID` (required): Identifies the user making the request
++
++**Optional Headers:**
++
++- `X-User-Email`: User's email address
++- `X-User-Roles`: User's roles (comma-separated)
++
++All document operations are scoped to the user specified in `X-User-ID`. Users can only access their own documents.
++
++**Security Model:**
++
++- ✅ User isolation enforced at database query level
++- ✅ All endpoints validate X-User-ID header presence
++- ✅ Cross-user access attempts return 404 (not 403) to prevent enumeration
++- ⚠️ Service trusts headers set by upstream gateway
++
++**Important**: This service should run behind the [fm-api-gateway](https://github.com/FaultMaven/faultmaven) which handles authentication and sets these headers. Never expose this service directly to the internet.
++
++## Architecture
++
++```
++┌─────────────────────────┐
++│  FaultMaven API Gateway │  Handles authentication (Clerk)
++│  (Port 8000)            │  Sets X-User-ID header
++└───────────┬─────────────┘
++            │ Trusted headers (X-User-ID)
++            ↓
++┌─────────────────────────┐
++│  fm-knowledge-service   │  Trusts gateway headers
++│  (Port 8002)            │  Enforces user isolation
++└───────────┬─────────────┘
++            │ SQLAlchemy ORM + Embedding API
++            ↓
++┌─────────────────────────┐
++│  SQLite Database        │  fm_knowledge.db
++│  (Local file)           │  Document metadata
++└─────────────────────────┘
++            ↓
++┌─────────────────────────┐
++│  ChromaDB               │  Vector embeddings
++│  (Port 8000)            │  Semantic search index
++└─────────────────────────┘
++```
++
++**Related Services:**
++- fm-session-service (8001) - Investigation sessions
++- fm-case-service (8003) - Case management
++- fm-evidence-service (8004) - Evidence artifacts
++
++**Storage Details:**
++
++- **Metadata Database**: SQLite with aiosqlite async driver
++- **Location**: `./fm_knowledge.db` (configurable via DATABASE_URL)
++- **Vector Database**: ChromaDB for embeddings and semantic search
++- **Embeddings**: Sentence transformers (all-MiniLM-L6-v2, 384 dimensions)
++- **Schema**: Auto-created on startup via SQLAlchemy
++- **Indexes**: Optimized for user_id and document_type lookups
++- **Migrations**: Not required (schema auto-managed)
++
++## Testing
++
++```bash
++# Install dev dependencies
++pip install -e ".[dev]"
++
++# Run all tests
++pytest
++
++# Run with coverage report
++pytest --cov=knowledge_service --cov-report=html --cov-report=term
++
++# Run specific test file
++pytest tests/test_documents.py -v
++
++# Run with debug output
++pytest -vv -s
++```
++
++**Test Coverage Goals:**
++
++- Unit tests: Core business logic (DocumentManager, SearchManager)
++- Integration tests: Database and vector DB operations
++- API tests: Endpoint behavior and validation
++- Target coverage: >80%
++
++## Development Workflow
++
++```bash
++# Format code with black
++black src/ tests/
++
++# Lint with flake8
++flake8 src/ tests/
++
++# Type check with mypy
++mypy src/
++
++# Run all quality checks
++black src/ tests/ && flake8 src/ tests/ && mypy src/ && pytest
++```
++
++## Related Projects
++
++- [faultmaven](https://github.com/FaultMaven/faultmaven) - Main backend with API Gateway and orchestration
++- [faultmaven-copilot](https://github.com/FaultMaven/faultmaven-copilot) - Browser extension UI for troubleshooting
++- [faultmaven-deploy](https://github.com/FaultMaven/faultmaven-deploy) - Docker Compose deployment configurations
++- [fm-session-service](https://github.com/FaultMaven/fm-session-service) - Investigation session management
++- [fm-case-service](https://github.com/FaultMaven/fm-case-service) - Case management
++- [fm-evidence-service](https://github.com/FaultMaven/fm-evidence-service) - Evidence artifact storage
++
++## CI/CD
++
++This repository uses **GitHub Actions** for automated documentation generation:
++
++**Trigger**: Every push to `main` or `develop` branches
++
++**Process**:
++1. Generate OpenAPI spec (JSON + YAML)
++2. Validate documentation completeness (fails if endpoints lack descriptions)
++3. Auto-generate this README from code
++4. Commit changes back to repository (if on main)
++
++See [.github/workflows/generate-docs.yml](.github/workflows/generate-docs.yml) for implementation details.
++
++**Documentation Guarantee**: This README is always in sync with the actual code. Any endpoint changes automatically trigger documentation updates.
++
++## License
++
++Apache 2.0 - See [LICENSE](LICENSE) for details.
++
++## Contributing
++
++Contributions welcome! Please:
++
++1. Fork the repository
++2. Create a feature branch (`git checkout -b feature/amazing-feature`)
++3. Make your changes
++4. Run tests and quality checks (`pytest && black . && flake8`)
++5. Commit with clear messages (`git commit -m 'feat: Add amazing feature'`)
++6. Push to your fork (`git push origin feature/amazing-feature`)
++7. Open a Pull Request
++
++**Code Style**: Black formatting, flake8 linting, mypy type checking
++**Commit Convention**: Conventional Commits (feat/fix/docs/refactor/test/chore)
++
++---
++
++**📊 Documentation Statistics**
++- Total endpoints: {total_endpoints}
++- Last generated: {timestamp}
++- OpenAPI spec version: {version}
++- Generator: scripts/generate_readme.py
++- CI/CD: GitHub Actions
++
++*This README is automatically updated on every commit to ensure zero documentation drift.*
++"""
++
++    # Write README
++    readme_path = Path(__file__).parent.parent / "README.md"
++    with open(readme_path, 'w', encoding='utf-8') as f:
++        f.write(readme_content)
++
++    print(f"✅ README.md generated successfully")
++    print(f"   Location: {readme_path}")
++    print(f"   Total endpoints documented: {total_endpoints}")
++    print(f"   Timestamp: {timestamp}")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/src/knowledge_service/api/routes/documents.py b/src/knowledge_service/api/routes/documents.py
+index b0156ab..dbebd3a 100644
+--- a/src/knowledge_service/api/routes/documents.py
++++ b/src/knowledge_service/api/routes/documents.py
+@@ -45,7 +45,58 @@ def set_managers(doc_mgr: DocumentManager, search_mgr: SearchManager = None,
+         globals()['analytics_manager'] = analytics_mgr
+ 
+ 
+-@router.post("", response_model=DocumentResponse, status_code=201)
++@router.post(
++    "",
++    response_model=DocumentResponse,
++    status_code=201,
++    summary="Create Document",
++    description="""
++Create a new knowledge document with semantic embeddings.
++
++**Workflow**:
++1. Validate document data (title, content, type)
++2. Generate unique document_id
++3. Create embeddings from document content using sentence transformers
++4. Store metadata in SQLite database
++5. Store embeddings in ChromaDB for semantic search
++6. Return created document with metadata
++
++**Request Example**:
++```json
++{
++  "title": "PostgreSQL Connection Pooling Guide",
++  "content": "Connection pooling is essential for database performance...",
++  "document_type": "kb_article",
++  "tags": ["postgresql", "performance", "database"],
++  "metadata": {"difficulty": "intermediate"}
++}
++```
++
++**Response Example**:
++```json
++{
++  "document_id": "doc_abc123",
++  "user_id": "user_123",
++  "title": "PostgreSQL Connection Pooling Guide",
++  "document_type": "kb_article",
++  "created_at": "2025-12-15T10:30:00Z"
++}
++```
++
++**Storage**:
++- SQLite: Document metadata and relationships
++- ChromaDB: Vector embeddings for semantic search (384 dimensions)
++
++**Authorization**: Required (X-User-ID header)
++**Rate Limits**: None
++    """,
++    responses={
++        201: {"description": "Document created successfully"},
++        401: {"description": "Missing or invalid authentication"},
++        422: {"description": "Invalid document data"},
++        500: {"description": "Internal server error during document creation"}
++    }
++)
+ async def create_document(doc_data: DocumentCreate, user_id: str = Depends(get_user_id)):
+     """Create a new document."""
+     try:
+@@ -56,7 +107,47 @@ async def create_document(doc_data: DocumentCreate, user_id: str = Depends(get_u
+         raise HTTPException(status_code=500, detail=str(e))
+ 
+ 
+-@router.get("/{document_id}", response_model=DocumentResponse)
++@router.get(
++    "/{document_id}",
++    response_model=DocumentResponse,
++    summary="Get Document",
++    description="""
++Retrieve a specific knowledge document by ID.
++
++**Workflow**:
++1. Validate document_id format
++2. Query SQLite database for document metadata
++3. Verify user ownership (user_id match)
++4. Return document details
++
++**Response Example**:
++```json
++{
++  "document_id": "doc_abc123",
++  "user_id": "user_123",
++  "title": "PostgreSQL Connection Pooling Guide",
++  "content": "Connection pooling is essential...",
++  "document_type": "kb_article",
++  "tags": ["postgresql", "performance"],
++  "created_at": "2025-12-15T10:30:00Z",
++  "updated_at": "2025-12-15T14:20:00Z"
++}
++```
++
++**Storage**:
++- SQLite: Reads document metadata
++- ChromaDB: Not accessed for single document retrieval
++
++**Authorization**: Required (X-User-ID header)
++**User Isolation**: Returns 404 if document belongs to different user
++    """,
++    responses={
++        200: {"description": "Document retrieved successfully"},
++        401: {"description": "Missing or invalid authentication"},
++        404: {"description": "Document not found or access denied"},
++        500: {"description": "Internal server error"}
++    }
++)
+ async def get_document(document_id: str, user_id: str = Depends(get_user_id)):
+     """Get document by ID."""
+     document = await doc_manager.get_document(document_id, user_id)
+@@ -65,7 +156,54 @@ async def get_document(document_id: str, user_id: str = Depends(get_user_id)):
+     return DocumentResponse.from_document(document)
+ 
+ 
+-@router.put("/{document_id}", response_model=DocumentResponse)
++@router.put(
++    "/{document_id}",
++    response_model=DocumentResponse,
++    summary="Update Document",
++    description="""
++Update an existing knowledge document's metadata or content.
++
++**Workflow**:
++1. Validate document_id and user ownership
++2. Update document metadata in SQLite
++3. If content changed, regenerate embeddings
++4. Update embeddings in ChromaDB if content modified
++5. Update updated_at timestamp
++6. Return updated document
++
++**Request Example**:
++```json
++{
++  "title": "PostgreSQL Connection Pooling - Updated",
++  "tags": ["postgresql", "performance", "production"],
++  "metadata": {"difficulty": "advanced"}
++}
++```
++
++**Response Example**:
++```json
++{
++  "document_id": "doc_abc123",
++  "title": "PostgreSQL Connection Pooling - Updated",
++  "updated_at": "2025-12-15T15:45:00Z"
++}
++```
++
++**Storage**:
++- SQLite: Updates document metadata
++- ChromaDB: Updates embeddings if content changed
++
++**Authorization**: Required (X-User-ID header)
++**User Isolation**: Returns 404 if document belongs to different user
++    """,
++    responses={
++        200: {"description": "Document updated successfully"},
++        401: {"description": "Missing or invalid authentication"},
++        404: {"description": "Document not found or access denied"},
++        422: {"description": "Invalid update data"},
++        500: {"description": "Internal server error during update"}
++    }
++)
+ async def update_document(document_id: str, updates: DocumentUpdate, user_id: str = Depends(get_user_id)):
+     """Update document."""
+     document = await doc_manager.update_document(document_id, user_id, updates)
+@@ -74,7 +212,34 @@ async def update_document(document_id: str, updates: DocumentUpdate, user_id: st
+     return DocumentResponse.from_document(document)
+ 
+ 
+-@router.delete("/{document_id}", status_code=204)
++@router.delete(
++    "/{document_id}",
++    status_code=204,
++    summary="Delete Document",
++    description="""
++Permanently delete a knowledge document and its embeddings.
++
++**Workflow**:
++1. Validate document_id and user ownership
++2. Delete embeddings from ChromaDB vector store
++3. Delete document metadata from SQLite database
++4. Return 204 No Content on success
++
++**Storage**:
++- SQLite: Removes document record
++- ChromaDB: Removes vector embeddings
++
++**Authorization**: Required (X-User-ID header)
++**User Isolation**: Returns 404 if document belongs to different user
++**Warning**: This operation is irreversible
++    """,
++    responses={
++        204: {"description": "Document deleted successfully"},
++        401: {"description": "Missing or invalid authentication"},
++        404: {"description": "Document not found or access denied"},
++        500: {"description": "Internal server error during deletion"}
++    }
++)
+ async def delete_document(document_id: str, user_id: str = Depends(get_user_id)):
+     """Delete document."""
+     deleted = await doc_manager.delete_document(document_id, user_id)
+@@ -82,7 +247,54 @@ async def delete_document(document_id: str, user_id: str = Depends(get_user_id))
+         raise HTTPException(status_code=404, detail="Document not found")
+ 
+ 
+-@router.get("", response_model=DocumentListResponse)
++@router.get(
++    "",
++    response_model=DocumentListResponse,
++    summary="List Documents",
++    description="""
++List knowledge documents with pagination and optional filtering.
++
++**Workflow**:
++1. Apply user_id filter for isolation
++2. Apply optional document_type filter
++3. Query SQLite database with limit/offset pagination
++4. Return documents and total count
++
++**Query Parameters**:
++- `limit`: Max documents to return (default: 50)
++- `offset`: Number of documents to skip (default: 0)
++- `document_type`: Filter by type (optional: runbook, kb_article, diagnostic, etc.)
++
++**Response Example**:
++```json
++{
++  "documents": [
++    {
++      "document_id": "doc_abc123",
++      "title": "PostgreSQL Pooling",
++      "document_type": "kb_article"
++    }
++  ],
++  "total_count": 42,
++  "limit": 50,
++  "offset": 0
++}
++```
++
++**Storage**:
++- SQLite: Queries document metadata with filters
++- ChromaDB: Not accessed for listing
++
++**Authorization**: Required (X-User-ID header)
++**User Isolation**: Only returns documents owned by authenticated user
++    """,
++    responses={
++        200: {"description": "Document list retrieved successfully"},
++        401: {"description": "Missing or invalid authentication"},
++        422: {"description": "Invalid query parameters"},
++        500: {"description": "Internal server error"}
++    }
++)
+ async def list_documents(
+     user_id: str = Depends(get_user_id),
+     limit: int = 50,
+@@ -96,7 +308,7 @@ async def list_documents(
+         offset=offset,
+         document_type=document_type
+     )
+-    
++
+     return DocumentListResponse(
+         documents=[DocumentResponse.from_document(doc).dict() for doc in documents],
+         total_count=total_count,
+@@ -109,7 +321,52 @@ async def list_documents(
+ # Bulk Operations & Statistics (Phase 4)
+ # =============================================================================
+ 
+-@router.get("/stats", summary="Get knowledge base statistics")
++@router.get(
++    "/stats",
++    summary="Get Knowledge Base Statistics",
++    description="""
++Retrieve comprehensive statistics about the user's knowledge base.
++
++**Workflow**:
++1. Query all user documents from SQLite
++2. Calculate total document count
++3. Group documents by type
++4. Calculate total storage size
++5. Return aggregated statistics
++
++**Response Example**:
++```json
++{
++  "total_documents": 127,
++  "by_type": {
++    "kb_article": 45,
++    "runbook": 32,
++    "diagnostic": 25,
++    "solution": 25
++  },
++  "total_size_bytes": 2548736
++}
++```
++
++**Use Cases**:
++- Dashboard statistics display
++- Storage usage monitoring
++- Knowledge base health checks
++- User analytics
++
++**Storage**:
++- SQLite: Queries all user documents for aggregation
++- ChromaDB: Not accessed
++
++**Authorization**: Required (X-User-ID header)
++**User Isolation**: Only counts documents owned by authenticated user
++    """,
++    responses={
++        200: {"description": "Statistics retrieved successfully"},
++        401: {"description": "Missing or invalid authentication"},
++        500: {"description": "Internal server error"}
++    }
++)
+ async def get_knowledge_stats(user_id: str = Depends(get_user_id)):
+     """Get knowledge base statistics for the user."""
+     try:
+@@ -135,13 +392,61 @@ async def get_knowledge_stats(user_id: str = Depends(get_user_id)):
+         raise HTTPException(status_code=500, detail=str(e))
+ 
+ 
+-@router.post("/bulk-update", summary="Bulk update documents")
++@router.post(
++    "/bulk-update",
++    summary="Bulk Update Documents",
++    description="""
++Update multiple documents in a single batch operation.
++
++**Workflow**:
++1. Validate each update request in the batch
++2. For each document:
++   - Verify user ownership
++   - Apply updates to SQLite metadata
++   - Regenerate embeddings if content changed
++   - Update ChromaDB if needed
++3. Return results for each document
++
++**Request Example**:
++```json
++[
++  {"document_id": "doc_123", "tags": ["updated", "reviewed"]},
++  {"document_id": "doc_456", "metadata": {"status": "archived"}}
++]
++```
++
++**Response Example**:
++```json
++{
++  "updated": 2,
++  "failed": 0,
++  "results": [
++    {"document_id": "doc_123", "success": true},
++    {"document_id": "doc_456", "success": true}
++  ]
++}
++```
++
++**Storage**:
++- SQLite: Updates multiple document records
++- ChromaDB: Updates embeddings for modified documents
++
++**Authorization**: Required (X-User-ID header)
++**User Isolation**: Only updates documents owned by authenticated user
++    """,
++    responses={
++        200: {"description": "Bulk update completed (check results for individual status)"},
++        401: {"description": "Missing or invalid authentication"},
++        422: {"description": "Invalid bulk update request"},
++        500: {"description": "Internal server error during bulk update"}
++    }
++)
+ async def bulk_update_documents(
+     updates: list[dict],
+     user_id: str = Depends(get_user_id)
+ ):
+     """Bulk update multiple documents.
+-    
++
+     Request format:
+     [
+         {"document_id": "doc_123", "tags": ["updated"]},
+@@ -183,7 +488,62 @@ async def bulk_update_documents(
+ # Search & Collections (Phase 6.3)
+ # =============================================================================
+ 
+-@router.post("/search", summary="Search knowledge base")
++@router.post(
++    "/search",
++    summary="Search Knowledge Base",
++    description="""
++Search documents using full-text search with optional filtering.
++
++**Workflow**:
++1. Apply user_id filter for isolation
++2. Apply optional document_type filter
++3. Query SQLite database for matching documents
++4. Perform full-text search on title and content
++5. Apply pagination limits
++6. Return matching documents
++
++**Request Example**:
++```json
++{
++  "query": "PostgreSQL connection timeout",
++  "document_type": "kb_article",
++  "limit": 20
++}
++```
++
++**Response Example**:
++```json
++{
++  "query": "PostgreSQL connection timeout",
++  "results": [
++    {
++      "document_id": "doc_abc123",
++      "title": "PostgreSQL Connection Pooling",
++      "document_type": "kb_article",
++      "created_at": "2025-12-15T10:30:00Z"
++    }
++  ],
++  "total_results": 1,
++  "returned": 1
++}
++```
++
++**Note**: For semantic/vector search, use `/api/v1/search` endpoint instead.
++
++**Storage**:
++- SQLite: Full-text search on document metadata
++- ChromaDB: Not used (this is text search, not semantic)
++
++**Authorization**: Required (X-User-ID header)
++**User Isolation**: Only searches documents owned by authenticated user
++    """,
++    responses={
++        200: {"description": "Search completed successfully"},
++        401: {"description": "Missing or invalid authentication"},
++        422: {"description": "Invalid search parameters"},
++        500: {"description": "Internal server error during search"}
++    }
++)
+ async def search_documents(
+     search_params: dict,
+     user_id: str = Depends(get_user_id)
+@@ -235,7 +595,52 @@ async def search_documents(
+         raise HTTPException(status_code=500, detail=str(e))
+ 
+ 
+-@router.get("/collections", summary="List document collections")
++@router.get(
++    "/collections",
++    summary="List Document Collections",
++    description="""
++List all document collections (pseudo-collections based on document types).
++
++**Workflow**:
++1. Query all user documents from SQLite
++2. Group documents by document_type
++3. Count documents in each collection
++4. Return collection metadata
++
++**Response Example**:
++```json
++{
++  "collections": [
++    {
++      "collection_id": "kb_article",
++      "name": "Kb Article",
++      "document_count": 45
++    },
++    {
++      "collection_id": "runbook",
++      "name": "Runbook",
++      "document_count": 32
++    }
++  ],
++  "total": 2
++}
++```
++
++**Note**: Currently implements pseudo-collections using document_type. Full collection system planned for future release.
++
++**Storage**:
++- SQLite: Queries document metadata for grouping
++- ChromaDB: Not accessed
++
++**Authorization**: Required (X-User-ID header)
++**User Isolation**: Only includes documents owned by authenticated user
++    """,
++    responses={
++        200: {"description": "Collections retrieved successfully"},
++        401: {"description": "Missing or invalid authentication"},
++        500: {"description": "Internal server error"}
++    }
++)
+ async def list_collections(user_id: str = Depends(get_user_id)):
+     """List all document collections for user."""
+     try:
+@@ -267,7 +672,42 @@ async def list_collections(user_id: str = Depends(get_user_id)):
+         raise HTTPException(status_code=500, detail=str(e))
+ 
+ 
+-@router.post("/collections", summary="Create document collection")
++@router.post(
++    "/collections",
++    summary="Create Document Collection",
++    description="""
++Create a new document collection.
++
++**Status**: Not yet implemented
++
++**Planned Workflow**:
++1. Validate collection name and metadata
++2. Create collection record in SQLite
++3. Associate collection with user_id
++4. Return collection metadata
++
++**Planned Request**:
++```json
++{
++  "name": "Production Runbooks",
++  "description": "Runbooks for production environment",
++  "metadata": {"environment": "production"}
++}
++```
++
++**Storage**:
++- SQLite: Will store collection metadata
++- ChromaDB: No impact
++
++**Authorization**: Required (X-User-ID header)
++    """,
++    responses={
++        201: {"description": "Collection created successfully (not implemented)"},
++        401: {"description": "Missing or invalid authentication"},
++        422: {"description": "Invalid collection data"},
++        501: {"description": "Not yet implemented"}
++    }
++)
+ async def create_collection(
+     collection_data: dict,
+     user_id: str = Depends(get_user_id)
+@@ -279,7 +719,49 @@ async def create_collection(
+     )
+ 
+ 
+-@router.post("/batch-delete", summary="Batch delete documents")
++@router.post(
++    "/batch-delete",
++    summary="Batch Delete Documents",
++    description="""
++Delete multiple documents in a single batch operation.
++
++**Workflow**:
++1. Validate document_ids list
++2. For each document:
++   - Verify user ownership
++   - Delete embeddings from ChromaDB
++   - Delete metadata from SQLite
++3. Return deletion results
++
++**Request Example**:
++```json
++["doc_abc123", "doc_def456", "doc_ghi789"]
++```
++
++**Response Example**:
++```json
++{
++  "deleted": 2,
++  "failed": 1,
++  "failed_ids": ["doc_ghi789"]
++}
++```
++
++**Storage**:
++- SQLite: Removes multiple document records
++- ChromaDB: Removes vector embeddings for all documents
++
++**Authorization**: Required (X-User-ID header)
++**User Isolation**: Only deletes documents owned by authenticated user
++**Warning**: This operation is irreversible
++    """,
++    responses={
++        200: {"description": "Batch deletion completed (check results for details)"},
++        401: {"description": "Missing or invalid authentication"},
++        422: {"description": "Invalid document IDs list"},
++        500: {"description": "Internal server error during batch deletion"}
++    }
++)
+ async def batch_delete_documents(
+     document_ids: list[str],
+     user_id: str = Depends(get_user_id)
+diff --git a/src/knowledge_service/api/routes/search.py b/src/knowledge_service/api/routes/search.py
+index d9259f1..6d52a17 100644
+--- a/src/knowledge_service/api/routes/search.py
++++ b/src/knowledge_service/api/routes/search.py
+@@ -20,7 +20,67 @@ def set_search_manager(manager: SearchManager):
+     globals()['search_manager'] = manager
+ 
+ 
+-@router.post("", response_model=SearchResponse)
++@router.post(
++    "",
++    response_model=SearchResponse,
++    summary="Semantic Search",
++    description="""
++Perform semantic/vector search across knowledge documents using AI embeddings.
++
++**Workflow**:
++1. Convert search query to vector embedding using sentence transformer
++2. Query ChromaDB vector database for similar embeddings
++3. Apply user_id filter for isolation
++4. Apply optional document_type and tags filters
++5. Rank results by semantic similarity
++6. Return top matching documents with relevance scores
++
++**Request Example**:
++```json
++{
++  "query": "How do I troubleshoot slow database queries?",
++  "limit": 10,
++  "document_type": "kb_article",
++  "tags": ["database", "performance"]
++}
++```
++
++**Response Example**:
++```json
++{
++  "query": "How do I troubleshoot slow database queries?",
++  "results": [
++    {
++      "document_id": "doc_abc123",
++      "title": "PostgreSQL Query Performance Tuning",
++      "content": "When troubleshooting slow queries...",
++      "similarity_score": 0.87,
++      "document_type": "kb_article"
++    }
++  ],
++  "total_found": 5
++}
++```
++
++**How It Works**:
++- Uses sentence transformers (all-MiniLM-L6-v2, 384 dimensions)
++- Finds semantically similar content, not just keyword matches
++- Understands context and meaning (e.g., "slow queries" matches "performance tuning")
++
++**Storage**:
++- SQLite: Retrieves document metadata for results
++- ChromaDB: Performs vector similarity search on embeddings
++
++**Authorization**: Required (X-User-ID header)
++**User Isolation**: Only searches documents owned by authenticated user
++    """,
++    responses={
++        200: {"description": "Semantic search completed successfully"},
++        401: {"description": "Missing or invalid authentication"},
++        422: {"description": "Invalid search request"},
++        500: {"description": "Internal server error during search"}
++    }
++)
+ async def search_documents(request: SearchRequest, user_id: str = Depends(get_user_id)):
+     """Semantic search across documents."""
+     results = await search_manager.search(
+@@ -30,7 +90,7 @@ async def search_documents(request: SearchRequest, user_id: str = Depends(get_us
+         document_type=request.document_type,
+         tags=request.tags
+     )
+-    
++
+     return SearchResponse(
+         query=request.query,
+         results=[SearchResultItem(**r) for r in results],
+@@ -38,7 +98,68 @@ async def search_documents(request: SearchRequest, user_id: str = Depends(get_us
+     )
+ 
+ 
+-@router.get("/similar/{document_id}", response_model=SearchResponse)
++@router.get(
++    "/similar/{document_id}",
++    response_model=SearchResponse,
++    summary="Find Similar Documents",
++    description="""
++Find documents semantically similar to a given document using vector similarity.
++
++**Workflow**:
++1. Retrieve source document from SQLite
++2. Get document's embedding from ChromaDB
++3. Query ChromaDB for similar embeddings
++4. Apply user_id filter for isolation
++5. Exclude source document from results
++6. Rank by semantic similarity
++7. Return top similar documents
++
++**Query Parameters**:
++- `document_id`: ID of source document (path parameter)
++- `limit`: Max similar documents to return (default: 5)
++
++**Response Example**:
++```json
++{
++  "query": "Similar to doc_abc123",
++  "results": [
++    {
++      "document_id": "doc_def456",
++      "title": "Database Connection Optimization",
++      "similarity_score": 0.82,
++      "document_type": "kb_article"
++    },
++    {
++      "document_id": "doc_ghi789",
++      "title": "PostgreSQL Performance Best Practices",
++      "similarity_score": 0.78,
++      "document_type": "runbook"
++    }
++  ],
++  "total_found": 2
++}
++```
++
++**Use Cases**:
++- "Related documents" feature
++- Content recommendations
++- Duplicate detection
++- Knowledge base exploration
++
++**Storage**:
++- SQLite: Retrieves document metadata
++- ChromaDB: Performs vector similarity search
++
++**Authorization**: Required (X-User-ID header)
++**User Isolation**: Only searches documents owned by authenticated user
++    """,
++    responses={
++        200: {"description": "Similar documents found successfully"},
++        401: {"description": "Missing or invalid authentication"},
++        404: {"description": "Source document not found or access denied"},
++        500: {"description": "Internal server error during similarity search"}
++    }
++)
+ async def find_similar_documents(document_id: str, limit: int = 5, user_id: str = Depends(get_user_id)):
+     """Find documents similar to a given document."""
+     results = await search_manager.find_similar(
+@@ -46,7 +167,7 @@ async def find_similar_documents(document_id: str, limit: int = 5, user_id: str
+         user_id=user_id,
+         limit=limit
+     )
+-    
++
+     return SearchResponse(
+         query=f"Similar to {document_id}",
+         results=[SearchResultItem(**r) for r in results],
+diff --git a/src/knowledge_service/main.py b/src/knowledge_service/main.py
+index 5147984..32adb8b 100644
+--- a/src/knowledge_service/main.py
++++ b/src/knowledge_service/main.py
+@@ -107,7 +107,49 @@ async def setup_managers():
+     knowledge_endpoints.set_managers(doc_mgr, search_mgr, job_mgr, analytics_mgr)
+ 
+ 
+-@app.get("/health", response_model=HealthResponse)
++@app.get(
++    "/health",
++    response_model=HealthResponse,
++    summary="Health Check",
++    description="""
++Returns the health status of the Knowledge Service and its dependencies.
++
++**Workflow**:
++1. Checks service availability
++2. Verifies database connection status
++3. Verifies ChromaDB vector database connection status
++4. Returns service metadata and component health
++
++**Response Example**:
++```json
++{
++  "status": "healthy",
++  "service": "fm-knowledge-service",
++  "version": "1.0.0",
++  "database_connected": true,
++  "chroma_connected": true
++}
++```
++
++**Use Cases**:
++- Kubernetes liveness/readiness probes
++- Load balancer health checks
++- Service mesh health monitoring
++- Docker Compose healthcheck
++- Monitoring systems (Prometheus, Datadog, etc.)
++
++**Storage**:
++- No database query (reports connection status only)
++- ChromaDB: No vector query (reports connection status only)
++
++**Rate Limits**: None
++**Authorization**: None required (public endpoint)
++    """,
++    responses={
++        200: {"description": "Service is healthy and all dependencies are operational"},
++        500: {"description": "Service is unhealthy or experiencing issues"}
++    }
++)
+ async def health_check():
+     """Health check endpoint."""
+     settings = get_settings()
+@@ -124,7 +166,41 @@ async def health_check():
+     )
+ 
+ 
+-@app.get("/")
++@app.get(
++    "/",
++    summary="Service Information",
++    description="""
++Returns basic information about the Knowledge Service.
++
++**Workflow**:
++1. Returns service metadata
++2. Confirms service is running and responsive
++3. Provides version information
++
++**Response Example**:
++```json
++{
++  "service": "fm-knowledge-service",
++  "version": "1.0.0",
++  "status": "running"
++}
++```
++
++**Use Cases**:
++- Quick verification that service is running
++- Service discovery
++- Version checking
++- API exploration starting point
++
++**Storage**: No database access required
++**Rate Limits**: None
++**Authorization**: None required (public endpoint)
++    """,
++    responses={
++        200: {"description": "Service information returned successfully"},
++        500: {"description": "Service is experiencing issues"}
++    }
++)
+ async def root():
+     """Root endpoint."""
+     return {
+-- 
+2.43.0
+

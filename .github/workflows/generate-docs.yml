@@ -217,7 +217,7 @@ jobs:
           reviewers: ${{ github.actor }}
 
       - name: Upload OpenAPI spec as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: openapi-spec
           path: docs/api/

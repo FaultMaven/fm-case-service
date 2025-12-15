@@ -71,7 +71,43 @@ async def shutdown():
     await db_client.close()
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="Health Check",
+    description="""
+Returns the health status of the Case Service.
+
+**Workflow**:
+1. Checks service availability
+2. Reports database connection type
+3. Returns service metadata
+
+**Response Example**:
+```json
+{
+  "status": "healthy",
+  "service": "fm-case-service",
+  "version": "1.0.0",
+  "database": "sqlite+aiosqlite"
+}
+```
+
+**Use Cases**:
+- Kubernetes liveness/readiness probes
+- Load balancer health checks
+- Service mesh health monitoring
+- Docker Compose healthcheck
+
+**Storage**: No database query (reports connection type only)
+**Rate Limits**: None
+**Authorization**: None required (public endpoint)
+    """,
+    responses={
+        200: {"description": "Service is healthy and operational"},
+        500: {"description": "Service is unhealthy or experiencing issues"}
+    }
+)
 async def health_check():
     """Health check endpoint."""
     return HealthResponse(

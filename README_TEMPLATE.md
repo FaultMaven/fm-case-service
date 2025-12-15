@@ -1,6 +1,6 @@
 # fm-case-service
 
-> **Auto-generated API docs** | Last updated: **2025-12-15 05:48 UTC** | Endpoints: **8**
+<!-- GENERATED:BADGE_LINE -->
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://hub.docker.com/r/faultmaven/fm-case-service)
@@ -58,31 +58,11 @@ The service creates a SQLite database at `./fm_cases.db` on first run.
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health Check |
-| POST | `/api/v1/cases` | Create new troubleshooting case |
-| GET | `/api/v1/cases` | List user's cases with pagination |
-| GET | `/api/v1/cases/session/{session_id}` | Get cases linked to a session |
-| GET | `/api/v1/cases/{case_id}` | Get case by ID |
-| PUT | `/api/v1/cases/{case_id}` | Update case details |
-| DELETE | `/api/v1/cases/{case_id}` | Delete case permanently |
-| POST | `/api/v1/cases/{case_id}/status` | Update case status |
-
+<!-- GENERATED:API_TABLE -->
 
 **OpenAPI Documentation**: See [docs/api/openapi.json](docs/api/openapi.json) or [docs/api/openapi.yaml](docs/api/openapi.yaml) for complete API specification.
 
-## Common Response Codes
-
-- **200**: Case found and returned successfully
-- **201**: Case created successfully
-- **204**: Case deleted successfully (no content returned)
-- **400**: Invalid status value
-- **401**: Unauthorized - missing or invalid X-User-ID header
-- **404**: Case not found or access denied (returns 404 to prevent enumeration)
-- **422**: Validation Error
-- **500**: Internal server error
-
+<!-- GENERATED:RESPONSE_CODES -->
 
 ## Configuration
 
@@ -298,11 +278,4 @@ Contributions welcome! Please:
 
 ---
 
-**Documentation Statistics**
-- Total endpoints: 8
-- Last generated: 2025-12-15 05:48 UTC
-- OpenAPI spec version: 1.0.0
-- Generator: scripts/generate_readme.py
-- Template: README_TEMPLATE.md
-
-*API sections are automatically updated on every commit. Prose sections are human-editable.*
+<!-- GENERATED:STATS -->

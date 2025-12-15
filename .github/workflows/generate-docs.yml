@@ -19,6 +19,10 @@ on:
       - 'pyproject.toml'
   workflow_dispatch:  # Allow manual trigger for initial setup or debugging
 
+permissions:
+  contents: write        # Required to create branches and commits
+  pull-requests: write   # Required to create pull requests
+
 jobs:
   generate-docs:
     runs-on: ubuntu-latest
@@ -42,6 +46,8 @@ jobs:
           pip install pyyaml
 
       - name: Generate OpenAPI Specification
+        env:
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"  # In-memory DB for doc generation (no actual connection needed)
         run: |
           python -c "
           from case_service.main import app
@@ -69,6 +75,8 @@ jobs:
           "
 
       - name: Validate Documentation Completeness
+        env:
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"  # In-memory DB for validation (no actual connection needed)
         run: |
           python -c "
           from case_service.main import app

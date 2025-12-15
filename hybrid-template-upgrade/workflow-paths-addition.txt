@@ -1,0 +1,25 @@
+Add this line to the 'paths:' section of .github/workflows/generate-docs.yml:
+
+      - 'README_TEMPLATE.md'         # README template (human-editable)
+
+Example (both push and pull_request sections):
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/**/api/**'
+      - 'src/**/models/**'
+      - 'src/**/main.py'
+      - 'scripts/generate_readme.py'
+      - 'README_TEMPLATE.md'         # <-- ADD THIS LINE
+      - 'pyproject.toml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**/api/**'
+      - 'src/**/models/**'
+      - 'src/**/main.py'
+      - 'scripts/generate_readme.py'
+      - 'README_TEMPLATE.md'         # <-- ADD THIS LINE
+      - 'pyproject.toml'

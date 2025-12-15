@@ -149,8 +149,9 @@ def inject_content(template: str, replacements: Dict[str, str]) -> str:
     result = template
 
     for placeholder, content in replacements.items():
-        # Match <!-- GENERATED:PLACEHOLDER --> pattern
-        pattern = rf'<!-- GENERATED:{placeholder} -->'
+        # Match <!-- GENERATED:PLACEHOLDER --> with flexible whitespace
+        # Handles: <!--GENERATED:X-->, <!-- GENERATED:X -->, <!--  GENERATED:X  -->
+        pattern = rf'<!--\s*GENERATED:{placeholder}\s*-->'
         result = re.sub(pattern, content, result)
 
     return result

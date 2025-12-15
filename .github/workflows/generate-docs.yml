@@ -44,8 +44,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
-          pip install pyyaml
+          # Install dependencies without fm-core-lib (not needed for doc generation)
+          pip install fastapi uvicorn pydantic pydantic-settings python-dotenv pyyaml aiosqlite alembic asyncpg cryptography
+          # Install package in editable mode, skipping fm-core-lib dependency
+          pip install --no-deps -e .
 
       - name: Generate OpenAPI Specification
         env:

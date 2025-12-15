@@ -91,14 +91,42 @@ async def get_user_id(x_user_id: Optional[str] = Header(None, alias="X-User-ID")
 # Health Check Endpoint
 # =============================================================================
 
-@router.get("/health", summary="Get case service health")
-async def get_case_service_health() -> Dict[str, Any]:
-    """
-    Get case service health status.
+@router.get(
+    "/health",
+    summary="Get case service health",
+    description="""
+Returns health status of the case management subsystem.
 
-    Returns health information about the case persistence system,
-    including connectivity and performance metrics.
-    """
+**Workflow**:
+1. Checks case persistence system connectivity
+2. Returns service status and feature flags
+3. No authentication required (health endpoints are public)
+
+**Response Example**:
+```json
+{
+  "service": "case_management",
+  "status": "healthy",
+  "timestamp": "2025-11-19T10:30:00Z",
+  "features": {
+    "case_persistence": true,
+    "case_sharing": true,
+    "conversation_history": true
+  }
+}
+```
+
+**Storage**: No database access (lightweight check)
+**Rate Limits**: None
+**Authorization**: None required (public endpoint)
+    """,
+    responses={
+        200: {"description": "Service health status returned successfully"},
+        500: {"description": "Internal server error - service unhealthy"}
+    }
+)
+async def get_case_service_health() -> Dict[str, Any]:
+    """Get case service health status."""
     try:
         return {
             "service": "case_management",
@@ -409,27 +437,59 @@ async def delete_case(
         )
 
 
-@router.get("/{case_id}/ui", summary="Get case UI data")
+@router.get(
+    "/{case_id}/ui",
+    summary="Get case UI data",
+    description="""
+Returns phase-adaptive UI-optimized case data in a single response.
+
+**Workflow**:
+1. Retrieves case by ID with user ownership validation
+2. Transforms case data into UI-friendly format
+3. Includes phase-specific UI hints and state
+
+**Use Case**: Frontend applications can fetch all required UI state in a single call,
+reducing round-trips and improving perceived performance.
+
+**Request Example**:
+```
+GET /api/v1/cases/case_abc123/ui
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_abc123",
+  "title": "Redis connection timeouts",
+  "description": "Intermittent timeouts on Redis cluster",
+  "status": "investigating",
+  "priority": "high",
+  "created_at": "2025-11-19T10:30:00Z",
+  "updated_at": "2025-11-19T11:15:00Z"
+}
+```
+
+**Storage**: SQLite read with user_id filter
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can access UI data
+    """,
+    responses={
+        200: {"description": "UI-optimized case data returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to access this case"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_case_ui(
     case_id: str,
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ) -> Dict[str, Any]:
-    """
-    Get phase-adaptive UI-optimized case response.
-
-    Returns UI state optimized for the current investigation phase.
-    This endpoint eliminates multiple API calls by returning all UI state
-    in a single response.
-
-    Args:
-        case_id: Case identifier
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        UI-optimized case data
-    """
+    """Get phase-adaptive UI-optimized case response."""
     try:
         # Get case from service
         case = await case_manager.get_case(case_id, user_id)
@@ -469,7 +529,56 @@ async def get_case_ui(
         )
 
 
-@router.post("/{case_id}/title", summary="Generate case title")
+@router.post(
+    "/{case_id}/title",
+    summary="Generate case title",
+    description="""
+Generates or retrieves a concise, case-specific title based on case content.
+
+**Workflow**:
+1. If case has meaningful existing title and force=false, returns existing title
+2. Otherwise, generates new title from case messages and metadata
+3. Updates case with generated title
+
+**Query Parameters**:
+- `force` (default: false): Force overwrite of existing meaningful title
+
+**Request Body** (optional):
+```json
+{
+  "max_words": 8,
+  "hint": "focus on the root cause"
+}
+```
+
+**Response Example**:
+```json
+{
+  "title": "Redis Connection Timeout Investigation",
+  "case_id": "case_abc123",
+  "source": "generated",
+  "generated": true
+}
+```
+
+**Title Generation Rules**:
+- Default titles ("New Case", "Untitled") are always regenerated
+- Titles with < 3 words are considered non-meaningful
+- max_words must be between 3-12 (default: 8)
+
+**Storage**: SQLite read/write with user_id filter
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can generate titles
+    """,
+    responses={
+        200: {"description": "Title generated or existing title returned"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to modify this case"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error - title generation failed"}
+    }
+)
 async def generate_case_title(
     case_id: str,
     title_request: Optional[Dict[str, Any]] = None,
@@ -477,19 +586,7 @@ async def generate_case_title(
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ) -> Dict[str, Any]:
-    """
-    Generate a concise, case-specific title from case messages and metadata.
-
-    Args:
-        case_id: Case identifier
-        title_request: Optional parameters (max_words, hint)
-        force: Force overwrite of existing meaningful title
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        Title response with generated or existing title
-    """
+    """Generate a concise, case-specific title from case messages and metadata."""
     try:
         logger.info(f"Title generation started for case {case_id}, force={force}")
 
@@ -831,7 +928,60 @@ async def update_case_status(
 # Evidence & Data Endpoints (Phase 4)
 # =============================================================================
 
-@router.get("/{case_id}/data", summary="List case data")
+@router.get(
+    "/{case_id}/data",
+    summary="List case data",
+    description="""
+Lists all data files and artifacts associated with a case.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Retrieves paginated list of data records
+3. Returns data metadata (not file contents)
+
+**Query Parameters**:
+- `limit` (default: 50, max: 200): Maximum number of items to return
+- `offset` (default: 0): Number of items to skip for pagination
+
+**Request Example**:
+```
+GET /api/v1/cases/case_abc123/data?limit=20&offset=0
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_abc123",
+  "data": [
+    {
+      "data_id": "data_xyz789",
+      "filename": "error_logs.txt",
+      "data_type": "log_file",
+      "size_bytes": 15360,
+      "upload_timestamp": "2025-11-19T10:30:00Z"
+    }
+  ],
+  "total": 5,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+**Storage**: SQLite query with user_id filter
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can list data
+    """,
+    responses={
+        200: {"description": "Data list returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to access this case"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def list_case_data(
     case_id: str,
     limit: int = Query(50, ge=1, le=200, description="Maximum number of items to return"),
@@ -839,21 +989,7 @@ async def list_case_data(
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ) -> Dict[str, Any]:
-    """
-    List data files associated with a case.
-
-    Returns array of data records with pagination.
-
-    Args:
-        case_id: Case identifier
-        limit: Maximum number of items to return
-        offset: Number of items to skip
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        List of data records with pagination metadata
-    """
+    """List data files associated with a case."""
     try:
         # Verify case exists and user has access
         case = await case_manager.get_case(case_id, user_id)
@@ -891,25 +1027,66 @@ async def list_case_data(
         )
 
 
-@router.get("/{case_id}/data/{data_id}", summary="Get case data")
+@router.get(
+    "/{case_id}/data/{data_id}",
+    summary="Get case data",
+    description="""
+Retrieves details for a specific data file attached to a case.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Retrieves data record by ID
+3. Returns data metadata and processing status
+
+**Request Example**:
+```
+GET /api/v1/cases/case_abc123/data/data_xyz789
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "data_id": "data_xyz789",
+  "case_id": "case_abc123",
+  "filename": "error_logs.txt",
+  "description": "Application error logs from production",
+  "data_type": "log_file",
+  "size_bytes": 15360,
+  "upload_timestamp": "2025-11-19T10:30:00Z",
+  "processing_status": "completed"
+}
+```
+
+**Data Types**:
+- `log_file`: Application or system logs
+- `config_file`: Configuration files
+- `screenshot`: UI screenshots
+- `trace`: Distributed traces or stack traces
+- `metrics`: Metrics data exports
+- `other`: Uncategorized data
+
+**Storage**: SQLite query with user_id filter
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can access data
+    """,
+    responses={
+        200: {"description": "Data record details returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to access this case"},
+        404: {"description": "Case or data record not found"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_case_data(
     case_id: str,
     data_id: str,
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ) -> Dict[str, Any]:
-    """
-    Get specific data file details for a case.
-
-    Args:
-        case_id: Case identifier
-        data_id: Data record identifier
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        Data record details
-    """
+    """Get specific data file details for a case."""
     try:
         # Verify case exists and user has access
         case = await case_manager.get_case(case_id, user_id)
@@ -950,25 +1127,59 @@ async def get_case_data(
         )
 
 
-@router.delete("/{case_id}/data/{data_id}", summary="Delete case data", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{case_id}/data/{data_id}",
+    summary="Delete case data",
+    status_code=status.HTTP_204_NO_CONTENT,
+    description="""
+Permanently deletes a data file from a case.
+
+**WARNING**: This operation is irreversible. The data file and all associated
+metadata will be permanently deleted.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Deletes data record and associated file storage
+3. Returns 204 No Content on success
+
+**Request Example**:
+```
+DELETE /api/v1/cases/case_abc123/data/data_xyz789
+Headers:
+  X-User-ID: user_123
+```
+
+**Response**:
+```
+204 No Content (success, no body returned)
+404 Not Found (case or data doesn't exist)
+```
+
+**Behavior**:
+- Data record is permanently removed
+- Associated file in storage is deleted
+- Operation is idempotent (deleting non-existent data returns 404)
+
+**Storage**: SQLite delete with file storage cleanup
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can delete data
+    """,
+    responses={
+        204: {"description": "Data deleted successfully (no content returned)"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to delete from this case"},
+        404: {"description": "Case or data record not found"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def delete_case_data(
     case_id: str,
     data_id: str,
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ):
-    """
-    Delete a specific data file from a case.
-
-    Args:
-        case_id: Case identifier
-        data_id: Data record identifier to delete
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        204 No Content on success
-    """
+    """Delete a specific data file from a case."""
     try:
         # Verify case exists and user has access
         case = await case_manager.get_case(case_id, user_id)
@@ -1005,6 +1216,56 @@ async def delete_case_data(
     response_model=CaseResponse,
     status_code=status.HTTP_200_OK,
     summary="Add evidence/data to case",
+    description="""
+Adds evidence or data files to a case for investigation.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Processes and stores the evidence data
+3. Returns updated case with new evidence attached
+
+**Request Body Example**:
+```json
+{
+  "type": "log_file",
+  "filename": "application.log",
+  "content": "2025-11-19 10:30:00 ERROR Connection timeout...",
+  "metadata": {
+    "source": "production-server-01",
+    "log_level": "ERROR"
+  }
+}
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_abc123",
+  "user_id": "user_123",
+  "title": "Connection timeout investigation",
+  "status": "investigating",
+  ...
+}
+```
+
+**Evidence Types**:
+- `log_file`: Application or system logs
+- `config_file`: Configuration files
+- `screenshot`: UI screenshots
+- `trace`: Stack traces or distributed traces
+- `metrics`: Performance metrics
+
+**Storage**: SQLite with file storage for large content
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can add evidence
+    """,
+    responses={
+        200: {"description": "Evidence added successfully, returns updated case"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
 )
 async def add_case_data(
     case_id: str,
@@ -1019,7 +1280,49 @@ async def add_case_data(
     return CaseResponse.from_case(case)
 
 
-@router.get("/{case_id}/evidence/{evidence_id}", summary="Get specific evidence by ID")
+@router.get(
+    "/{case_id}/evidence/{evidence_id}",
+    summary="Get specific evidence by ID",
+    description="""
+Retrieves a specific evidence item from a case by its ID.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Retrieves evidence by ID from case
+3. Returns evidence details and content
+
+**Request Example**:
+```
+GET /api/v1/cases/case_abc123/evidence/ev_xyz789
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "evidence_id": "ev_xyz789",
+  "case_id": "case_abc123",
+  "type": "log_file",
+  "filename": "error.log",
+  "content": "2025-11-19 ERROR: Connection refused...",
+  "created_at": "2025-11-19T10:30:00Z",
+  "metadata": {"source": "production"}
+}
+```
+
+**Storage**: SQLite query with user_id filter
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can access evidence
+    """,
+    responses={
+        200: {"description": "Evidence details returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        404: {"description": "Case or evidence not found"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_case_evidence(
     case_id: str,
     evidence_id: str,
@@ -1033,7 +1336,53 @@ async def get_case_evidence(
     return evidence
 
 
-@router.get("/{case_id}/uploaded-files", summary="Get uploaded files for case")
+@router.get(
+    "/{case_id}/uploaded-files",
+    summary="Get uploaded files for case",
+    description="""
+Lists all files uploaded to a case during investigation.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Retrieves list of uploaded files
+3. Returns file metadata and processing status
+
+**Request Example**:
+```
+GET /api/v1/cases/case_abc123/uploaded-files
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "files": [
+    {
+      "file_id": "file_xyz789",
+      "filename": "screenshot.png",
+      "content_type": "image/png",
+      "size_bytes": 102400,
+      "upload_timestamp": "2025-11-19T10:30:00Z",
+      "status": "processed"
+    }
+  ],
+  "total": 3
+}
+```
+
+**Storage**: SQLite query with file storage references
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can list files
+    """,
+    responses={
+        200: {"description": "File list returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_uploaded_files(
     case_id: str,
     user_id: str = Depends(get_user_id),
@@ -1046,25 +1395,66 @@ async def get_uploaded_files(
     return {"files": files, "total": len(files)}
 
 
-@router.get("/{case_id}/uploaded-files/{file_id}", summary="Get uploaded file details")
+@router.get(
+    "/{case_id}/uploaded-files/{file_id}",
+    summary="Get uploaded file details",
+    description="""
+Retrieves detailed information for a specific uploaded file.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Retrieves file metadata by ID
+3. Returns file details including derived evidence
+
+**Request Example**:
+```
+GET /api/v1/cases/case_abc123/uploaded-files/file_xyz789
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "file_id": "file_xyz789",
+  "case_id": "case_abc123",
+  "filename": "error_screenshot.png",
+  "content_type": "image/png",
+  "size_bytes": 102400,
+  "upload_timestamp": "2025-11-19T10:30:00Z",
+  "status": "processed",
+  "derived_evidence": [
+    {"type": "text_extraction", "content": "Error: Connection refused"}
+  ]
+}
+```
+
+**File Processing Status**:
+- `pending`: File uploaded, awaiting processing
+- `processing`: File being analyzed
+- `processed`: Processing complete, evidence extracted
+- `failed`: Processing failed
+
+**Storage**: SQLite query with file storage reference
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can access file details
+    """,
+    responses={
+        200: {"description": "File details returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to access this case"},
+        404: {"description": "Case or file not found"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_uploaded_file_details(
     case_id: str,
     file_id: str,
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ) -> Dict[str, Any]:
-    """
-    Get details for a specific uploaded file.
-
-    Args:
-        case_id: Case identifier
-        file_id: File identifier
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        File details including metadata and derived evidence
-    """
+    """Get details for a specific uploaded file."""
     try:
         # Verify case exists and user has access
         case = await case_manager.get_case(case_id, user_id)
@@ -1105,7 +1495,57 @@ async def get_uploaded_file_details(
         )
 
 
-@router.post("/{case_id}/close", response_model=CaseResponse, summary="Close a case")
+@router.post(
+    "/{case_id}/close",
+    response_model=CaseResponse,
+    summary="Close a case",
+    description="""
+Closes a case, marking the investigation as complete.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Updates case status to 'closed'
+3. Records closure metadata (resolution, notes)
+4. Returns updated case
+
+**Request Body** (optional):
+```json
+{
+  "resolution": "resolved",
+  "resolution_notes": "Root cause identified as misconfigured timeout",
+  "resolved_by": "Increased connection timeout to 30s"
+}
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_abc123",
+  "status": "closed",
+  "resolved_at": "2025-11-19T15:30:00Z",
+  ...
+}
+```
+
+**Closure Types**:
+- `resolved`: Issue successfully resolved
+- `not_reproducible`: Could not reproduce the issue
+- `duplicate`: Duplicate of another case
+- `wont_fix`: Issue acknowledged but won't be fixed
+- `invalid`: Not a valid issue
+
+**Storage**: SQLite update with timestamp management
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can close case
+    """,
+    responses={
+        200: {"description": "Case closed successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def close_case(
     case_id: str,
     close_data: Optional[dict] = None,
@@ -1119,7 +1559,63 @@ async def close_case(
     return CaseResponse.from_case(case)
 
 
-@router.post("/search", response_model=CaseListResponse, summary="Search cases")
+@router.post(
+    "/search",
+    response_model=CaseListResponse,
+    summary="Search cases",
+    description="""
+Searches cases with flexible filtering criteria.
+
+**Workflow**:
+1. Validates search parameters
+2. Executes search query with user isolation
+3. Returns paginated results
+
+**Request Body Example**:
+```json
+{
+  "query": "connection timeout",
+  "status": ["investigating", "active"],
+  "severity": ["high", "critical"],
+  "category": "performance",
+  "date_from": "2025-11-01T00:00:00Z",
+  "date_to": "2025-11-30T23:59:59Z",
+  "tags": ["redis", "database"],
+  "page": 1,
+  "page_size": 20
+}
+```
+
+**Response Example**:
+```json
+{
+  "cases": [...],
+  "total": 15,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+**Search Fields**:
+- `query`: Full-text search in title and description
+- `status`: Filter by status (array)
+- `severity`: Filter by severity (array)
+- `category`: Filter by category
+- `date_from`/`date_to`: Date range filter
+- `tags`: Filter by tags (AND logic)
+
+**Storage**: SQLite full-text search with user_id filter
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only searches user's own cases
+    """,
+    responses={
+        200: {"description": "Search results returned successfully"},
+        400: {"description": "Invalid search parameters"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def search_cases(
     search_params: dict,
     user_id: str = Depends(get_user_id),
@@ -1139,7 +1635,56 @@ async def search_cases(
 # Hypothesis Management Endpoints (Phase 6.3)
 # =============================================================================
 
-@router.post("/{case_id}/hypotheses", summary="Add hypothesis to case")
+@router.post(
+    "/{case_id}/hypotheses",
+    summary="Add hypothesis to case",
+    description="""
+Adds a new hypothesis to an investigation case for tracking potential root causes.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Creates hypothesis with initial status
+3. Returns hypothesis ID and updated count
+
+**Request Body Example**:
+```json
+{
+  "title": "Redis connection pool exhaustion",
+  "description": "High load causing connection pool to be exhausted",
+  "confidence": 0.7,
+  "evidence": ["Connection timeout errors in logs", "Pool size at max"],
+  "suggested_tests": ["Increase pool size", "Check connection leaks"]
+}
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_abc123",
+  "hypothesis": {...},
+  "total_hypotheses": 3
+}
+```
+
+**Hypothesis Status Values**:
+- `proposed`: Initial state
+- `testing`: Under investigation
+- `confirmed`: Validated as root cause
+- `rejected`: Ruled out
+- `deferred`: Put on hold
+
+**Storage**: SQLite with JSONB for hypothesis data
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can add hypotheses
+    """,
+    responses={
+        200: {"description": "Hypothesis added successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def add_hypothesis(
     case_id: str,
     hypothesis_data: dict,
@@ -1153,7 +1698,58 @@ async def add_hypothesis(
     return {"case_id": case_id, "hypothesis": hypothesis_data, "total_hypotheses": len(case.hypotheses)}
 
 
-@router.put("/{case_id}/hypotheses/{hypothesis_id}", summary="Update hypothesis")
+@router.put(
+    "/{case_id}/hypotheses/{hypothesis_id}",
+    summary="Update hypothesis",
+    description="""
+Updates an existing hypothesis with new status, confidence, or evidence.
+
+**Workflow**:
+1. Validates case and hypothesis exist
+2. Applies partial updates to hypothesis
+3. Returns updated hypothesis
+
+**Request Body Example**:
+```json
+{
+  "status": "confirmed",
+  "confidence": 0.95,
+  "confirmation_evidence": "Load test confirmed pool exhaustion under high load",
+  "resolution": "Increased pool size from 10 to 50"
+}
+```
+
+**Response Example**:
+```json
+{
+  "hypothesis_id": "hyp_xyz789",
+  "case_id": "case_abc123",
+  "title": "Redis connection pool exhaustion",
+  "status": "confirmed",
+  "confidence": 0.95,
+  "updated_at": "2025-11-19T15:30:00Z"
+}
+```
+
+**Updatable Fields**:
+- `status`: Hypothesis status
+- `confidence`: Confidence score (0.0-1.0)
+- `evidence`: Additional evidence array
+- `confirmation_evidence`: Evidence confirming/rejecting
+- `resolution`: How the issue was resolved
+
+**Storage**: SQLite update with JSONB merge
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can update hypotheses
+    """,
+    responses={
+        200: {"description": "Hypothesis updated successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        404: {"description": "Case or hypothesis not found"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def update_hypothesis(
     case_id: str,
     hypothesis_id: str,
@@ -1168,27 +1764,64 @@ async def update_hypothesis(
     return hypothesis
 
 
-@router.post("/{case_id}/queries", summary="Submit case query")
+@router.post(
+    "/{case_id}/queries",
+    summary="Submit case query",
+    description="""
+Submits a user message or query to the case investigation.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Stores query in case history
+3. Returns query acknowledgment
+
+**Request Body Example**:
+```json
+{
+  "message": "What are the common causes of Redis connection timeouts?",
+  "context": {
+    "current_focus": "connection_pool"
+  }
+}
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_abc123",
+  "message": "What are the common causes...",
+  "status": "received",
+  "timestamp": "2025-11-19T10:30:00Z"
+}
+```
+
+**Query Types**:
+- Investigation questions
+- Troubleshooting commands
+- Evidence requests
+- Hypothesis proposals
+
+**Storage**: SQLite with message history
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can submit queries
+    """,
+    responses={
+        200: {"description": "Query submitted successfully"},
+        400: {"description": "Invalid query data - message required"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to query this case"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def submit_case_query(
     case_id: str,
     query_data: Dict[str, Any],
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ) -> Dict[str, Any]:
-    """
-    Submit user message to case investigation.
-
-    Processes the message and adds it to the case query history.
-
-    Args:
-        case_id: Case identifier
-        query_data: Query request containing 'message' field
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        Query response with case_id and query status
-    """
+    """Submit user message to case investigation."""
     # Validate case_id parameter
     if not case_id or case_id.strip() in ("", "undefined", "null"):
         raise HTTPException(
@@ -1238,7 +1871,52 @@ async def submit_case_query(
         )
 
 
-@router.get("/{case_id}/queries", summary="Get case query history")
+@router.get(
+    "/{case_id}/queries",
+    summary="Get case query history",
+    description="""
+Retrieves the history of user queries submitted to this case.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Retrieves query history
+3. Returns chronologically ordered queries
+
+**Request Example**:
+```
+GET /api/v1/cases/case_abc123/queries
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_abc123",
+  "queries": [
+    {
+      "query_id": "q_001",
+      "message": "What causes connection timeouts?",
+      "timestamp": "2025-11-19T10:30:00Z",
+      "response_status": "answered"
+    }
+  ],
+  "total": 5
+}
+```
+
+**Storage**: SQLite query with user_id filter
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can view query history
+    """,
+    responses={
+        200: {"description": "Query history returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_case_queries(
     case_id: str,
     user_id: str = Depends(get_user_id),
@@ -1251,7 +1929,72 @@ async def get_case_queries(
     return {"case_id": case_id, "queries": queries, "total": len(queries)}
 
 
-@router.get("/{case_id}/messages", summary="Get case messages")
+@router.get(
+    "/{case_id}/messages",
+    summary="Get case messages",
+    description="""
+Retrieves conversation messages for a case with pagination support.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Retrieves paginated message history
+3. Returns messages with metadata
+
+**Query Parameters**:
+- `limit` (default: 50, max: 100): Maximum messages to return
+- `offset` (default: 0): Pagination offset
+- `include_debug` (default: false): Include debug metadata
+
+**Request Example**:
+```
+GET /api/v1/cases/case_abc123/messages?limit=20&offset=0
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_abc123",
+  "messages": [
+    {
+      "message_id": "msg_001",
+      "role": "user",
+      "content": "I'm seeing connection timeouts",
+      "timestamp": "2025-11-19T10:30:00Z"
+    },
+    {
+      "message_id": "msg_002",
+      "role": "assistant",
+      "content": "Let me help investigate...",
+      "timestamp": "2025-11-19T10:30:05Z"
+    }
+  ],
+  "total_count": 50,
+  "retrieved_count": 20,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+**Message Roles**:
+- `user`: User messages
+- `assistant`: AI assistant responses
+- `system`: System notifications
+
+**Storage**: SQLite with message pagination
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can view messages
+    """,
+    responses={
+        200: {"description": "Messages returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to access this case"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_case_messages(
     case_id: str,
     limit: int = Query(50, le=100, ge=1, description="Maximum number of messages to return"),
@@ -1260,22 +2003,7 @@ async def get_case_messages(
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ) -> Dict[str, Any]:
-    """
-    Retrieve conversation messages for a case with pagination.
-
-    Supports pagination and includes metadata about message retrieval status.
-
-    Args:
-        case_id: Case identifier
-        limit: Maximum number of messages to return
-        offset: Offset for pagination
-        include_debug: Include debug information
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        Messages response with metadata
-    """
+    """Retrieve conversation messages for a case with pagination."""
     try:
         # Verify user has access to the case
         case = await case_manager.get_case(case_id, user_id)
@@ -1321,26 +2049,64 @@ async def get_case_messages(
 # Reports & Analytics Endpoints (Phase 6.3)
 # =============================================================================
 
-@router.get("/{case_id}/analytics", summary="Get case analytics")
+@router.get(
+    "/{case_id}/analytics",
+    summary="Get case analytics",
+    description="""
+Returns analytics and metrics for a specific case.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Calculates case metrics
+3. Returns analytics summary
+
+**Request Example**:
+```
+GET /api/v1/cases/case_abc123/analytics
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_abc123",
+  "message_count": 25,
+  "participant_count": 1,
+  "resolution_time_minutes": 120,
+  "status": "resolved",
+  "hypotheses_count": 3,
+  "evidence_count": 5,
+  "first_response_time_seconds": 15
+}
+```
+
+**Metrics Included**:
+- `message_count`: Total messages in case
+- `participant_count`: Number of participants
+- `resolution_time_minutes`: Time to resolution (if resolved)
+- `hypotheses_count`: Number of hypotheses generated
+- `evidence_count`: Number of evidence items attached
+
+**Storage**: SQLite aggregation queries
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can view analytics
+    """,
+    responses={
+        200: {"description": "Analytics data returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to access this case"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_case_analytics(
     case_id: str,
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ) -> Dict[str, Any]:
-    """
-    Get case analytics and metrics.
-
-    Returns analytics data including message counts, participant activity,
-    resolution time, and other case metrics.
-
-    Args:
-        case_id: Case identifier
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        Analytics data for the case
-    """
+    """Get case analytics and metrics."""
     try:
         # Verify user has access to the case
         case = await case_manager.get_case(case_id, user_id)
@@ -1378,26 +2144,67 @@ async def get_case_analytics(
         )
 
 
-@router.get("/{case_id}/report-recommendations", summary="Get report recommendations")
+@router.get(
+    "/{case_id}/report-recommendations",
+    summary="Get report recommendations",
+    description="""
+Returns intelligent recommendations for which reports to generate for a case.
+
+**Workflow**:
+1. Analyzes case content and status
+2. Determines applicable report types
+3. Returns prioritized recommendations
+
+**Request Example**:
+```
+GET /api/v1/cases/case_abc123/report-recommendations
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_abc123",
+  "available_reports": ["incident_report", "post_mortem", "runbook"],
+  "recommended_reports": [
+    {
+      "type": "post_mortem",
+      "reason": "Case resolved with root cause identified",
+      "priority": "high"
+    }
+  ],
+  "similar_runbooks": [
+    {"id": "rb_001", "title": "Redis Connection Issues", "similarity": 0.85}
+  ]
+}
+```
+
+**Report Types**:
+- `incident_report`: Standard incident documentation
+- `post_mortem`: Root cause analysis document
+- `runbook`: Operational runbook for similar issues
+- `timeline`: Event timeline summary
+
+**Storage**: SQLite with vector similarity search
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can get recommendations
+    """,
+    responses={
+        200: {"description": "Recommendations returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to access this case"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_report_recommendations(
     case_id: str,
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ) -> Dict[str, Any]:
-    """
-    Get intelligent report recommendations for a case.
-
-    Returns recommendations for which reports to generate, including
-    intelligent runbook suggestions based on similarity search.
-
-    Args:
-        case_id: Case identifier
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        Report recommendations with available types
-    """
+    """Get intelligent report recommendations for a case."""
     try:
         # Verify case exists and user has access
         case = await case_manager.get_case(case_id, user_id)
@@ -1433,25 +2240,69 @@ async def get_report_recommendations(
         )
 
 
-@router.post("/{case_id}/reports", summary="Generate case reports")
+@router.post(
+    "/{case_id}/reports",
+    summary="Generate case reports",
+    description="""
+Generates documentation reports for a case.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Queues report generation for requested types
+3. Returns report IDs for tracking
+
+**Request Body Example**:
+```json
+{
+  "report_types": ["incident_report", "post_mortem"],
+  "options": {
+    "include_timeline": true,
+    "include_evidence": true,
+    "format": "markdown"
+  }
+}
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_abc123",
+  "report_types": ["incident_report", "post_mortem"],
+  "status": "generating",
+  "reports": [
+    {"type": "incident_report", "report_id": "rpt_001", "status": "pending"},
+    {"type": "post_mortem", "report_id": "rpt_002", "status": "pending"}
+  ]
+}
+```
+
+**Report Types**:
+- `incident_report`: Standard incident documentation
+- `post_mortem`: Detailed root cause analysis
+- `runbook`: Operational runbook
+- `summary`: Brief case summary
+
+**Storage**: SQLite with async report generation
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can generate reports
+    """,
+    responses={
+        200: {"description": "Report generation started"},
+        400: {"description": "Invalid request - at least one report type required"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to generate reports"},
+        404: {"description": "Case not found"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def generate_case_reports(
     case_id: str,
     report_request: Dict[str, Any],
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ) -> Dict[str, Any]:
-    """
-    Generate case documentation reports.
-
-    Args:
-        case_id: Case identifier
-        report_request: Report generation request with report_types
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        Report generation response with report IDs
-    """
+    """Generate case documentation reports."""
     try:
         # Verify case exists and user has access
         case = await case_manager.get_case(case_id, user_id)
@@ -1495,25 +2346,70 @@ async def generate_case_reports(
         )
 
 
-@router.get("/{case_id}/reports", summary="Get case reports")
+@router.get(
+    "/{case_id}/reports",
+    summary="Get case reports",
+    description="""
+Retrieves generated reports for a case.
+
+**Workflow**:
+1. Validates case exists and user has access
+2. Retrieves report list (current or historical)
+3. Returns report metadata
+
+**Query Parameters**:
+- `include_history` (default: false): Include all report versions
+
+**Request Example**:
+```
+GET /api/v1/cases/case_abc123/reports?include_history=false
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "case_id": "case_abc123",
+  "reports": [
+    {
+      "report_id": "rpt_001",
+      "type": "incident_report",
+      "status": "completed",
+      "created_at": "2025-11-19T10:30:00Z",
+      "version": 1
+    }
+  ],
+  "include_history": false
+}
+```
+
+**Report Status Values**:
+- `pending`: Report generation queued
+- `generating`: Report being generated
+- `completed`: Report ready for download
+- `failed`: Generation failed
+
+**Storage**: SQLite query with version filtering
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can view reports
+    """,
+    responses={
+        200: {"description": "Reports list returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to access reports"},
+        404: {"description": "Case not found or access denied"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_case_reports(
     case_id: str,
     include_history: bool = Query(default=False, description="Include all report versions"),
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ) -> Dict[str, Any]:
-    """
-    Retrieve generated reports for a case.
-
-    Args:
-        case_id: Case identifier
-        include_history: If True, return all report versions; if False, only current
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        List of reports for the case
-    """
+    """Retrieve generated reports for a case."""
     try:
         # Verify case exists and user has access
         case = await case_manager.get_case(case_id, user_id)
@@ -1549,7 +2445,49 @@ async def get_case_reports(
         )
 
 
-@router.get("/{case_id}/reports/{report_id}/download", summary="Download case report")
+@router.get(
+    "/{case_id}/reports/{report_id}/download",
+    summary="Download case report",
+    description="""
+Downloads a generated report in the specified format.
+
+**Workflow**:
+1. Validates case and report exist
+2. Generates report in requested format
+3. Returns file download response
+
+**Query Parameters**:
+- `format` (default: markdown): Output format (markdown or pdf)
+
+**Request Example**:
+```
+GET /api/v1/cases/case_abc123/reports/rpt_001/download?format=markdown
+Headers:
+  X-User-ID: user_123
+```
+
+**Response**:
+- Content-Type: text/markdown or application/pdf
+- Content-Disposition: attachment; filename="report.md"
+
+**Supported Formats**:
+- `markdown`: Markdown text format (default)
+- `pdf`: PDF document (coming soon)
+
+**Storage**: SQLite with file content retrieval
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only case owner can download reports
+    """,
+    responses={
+        200: {"description": "Report file returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        403: {"description": "Forbidden - not authorized to download report"},
+        404: {"description": "Case or report not found"},
+        501: {"description": "PDF format not yet supported"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def download_case_report(
     case_id: str,
     report_id: str,
@@ -1557,19 +2495,7 @@ async def download_case_report(
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
 ) -> Dict[str, Any]:
-    """
-    Download case report in specified format.
-
-    Args:
-        case_id: Case identifier
-        report_id: Report identifier
-        format: Output format (markdown or pdf) - currently only markdown supported
-        user_id: Authenticated user ID
-        case_manager: Case manager dependency
-
-    Returns:
-        File response with report content
-    """
+    """Download case report in specified format."""
     try:
         # Verify case exists and user has access
         case = await case_manager.get_case(case_id, user_id)
@@ -1613,7 +2539,53 @@ async def download_case_report(
         )
 
 
-@router.get("/reports", summary="List available reports")
+@router.get(
+    "/reports",
+    summary="List available reports",
+    description="""
+Lists all available reports across the user's cases.
+
+**Workflow**:
+1. Retrieves all reports for user's cases
+2. Returns paginated list with metadata
+
+**Query Parameters**:
+- `limit` (default: 50, max: 100): Maximum reports to return
+
+**Request Example**:
+```
+GET /api/v1/cases/reports?limit=20
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "reports": [
+    {
+      "report_id": "rpt_001",
+      "case_id": "case_abc123",
+      "type": "incident_report",
+      "status": "completed",
+      "created_at": "2025-11-19T10:30:00Z"
+    }
+  ],
+  "total": 15
+}
+```
+
+**Storage**: SQLite query with user_id filter
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only shows user's own reports
+    """,
+    responses={
+        200: {"description": "Reports list returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def list_reports(
     user_id: str = Depends(get_user_id),
     limit: int = Query(50, ge=1, le=100),
@@ -1627,7 +2599,50 @@ async def list_reports(
     }
 
 
-@router.get("/reports/{report_id}", summary="Get specific report")
+@router.get(
+    "/reports/{report_id}",
+    summary="Get specific report",
+    description="""
+Retrieves a specific report by its ID.
+
+**Workflow**:
+1. Validates report exists and user has access
+2. Returns report metadata and content
+
+**Request Example**:
+```
+GET /api/v1/cases/reports/rpt_001
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "report_id": "rpt_001",
+  "case_id": "case_abc123",
+  "type": "incident_report",
+  "title": "Redis Connection Timeout Incident",
+  "status": "completed",
+  "content": "# Incident Report\\n\\n## Summary...",
+  "created_at": "2025-11-19T10:30:00Z",
+  "version": 1
+}
+```
+
+**Storage**: SQLite query with user access validation
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only report owner can access
+    """,
+    responses={
+        200: {"description": "Report returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        404: {"description": "Report not found or access denied"},
+        501: {"description": "Feature not yet implemented"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_report(
     report_id: str,
     user_id: str = Depends(get_user_id),
@@ -1639,7 +2654,64 @@ async def get_report(
     )
 
 
-@router.get("/analytics/summary", summary="Get case analytics summary")
+@router.get(
+    "/analytics/summary",
+    summary="Get case analytics summary",
+    description="""
+Returns aggregate analytics across all of the user's cases.
+
+**Workflow**:
+1. Aggregates metrics across user's cases
+2. Calculates summary statistics
+3. Returns analytics dashboard data
+
+**Request Example**:
+```
+GET /api/v1/cases/analytics/summary
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "total_cases": 25,
+  "cases_by_status": {
+    "active": 5,
+    "investigating": 8,
+    "resolved": 10,
+    "closed": 2
+  },
+  "cases_by_severity": {
+    "critical": 2,
+    "high": 8,
+    "medium": 10,
+    "low": 5
+  },
+  "average_resolution_time_hours": 4.5,
+  "cases_this_week": 3,
+  "cases_this_month": 12
+}
+```
+
+**Metrics Included**:
+- Total case count
+- Cases by status breakdown
+- Cases by severity breakdown
+- Average resolution time
+- Time-based case counts
+
+**Storage**: SQLite aggregation queries
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only aggregates user's own cases
+    """,
+    responses={
+        200: {"description": "Analytics summary returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_analytics_summary(
     user_id: str = Depends(get_user_id),
     case_manager: CaseManager = Depends(get_case_manager),
@@ -1649,7 +2721,61 @@ async def get_analytics_summary(
     return summary
 
 
-@router.get("/analytics/trends", summary="Get case trends")
+@router.get(
+    "/analytics/trends",
+    summary="Get case trends",
+    description="""
+Returns case trends and patterns over a specified time period.
+
+**Workflow**:
+1. Analyzes case data over time period
+2. Calculates trends and patterns
+3. Returns time-series data
+
+**Query Parameters**:
+- `days` (default: 30, max: 365): Number of days to analyze
+
+**Request Example**:
+```
+GET /api/v1/cases/analytics/trends?days=30
+Headers:
+  X-User-ID: user_123
+```
+
+**Response Example**:
+```json
+{
+  "period_days": 30,
+  "trends": [
+    {"date": "2025-11-01", "created": 2, "resolved": 1},
+    {"date": "2025-11-02", "created": 3, "resolved": 2},
+    ...
+  ],
+  "summary": {
+    "total_created": 25,
+    "total_resolved": 20,
+    "trend_direction": "improving"
+  }
+}
+```
+
+**Trend Analysis**:
+- Daily case creation counts
+- Daily resolution counts
+- Moving averages
+- Trend direction indicators
+
+**Storage**: SQLite time-series aggregation
+**Rate Limits**: None (enforced at API Gateway level)
+**Authorization**: Requires X-User-ID header
+**User Isolation**: Only analyzes user's own cases
+    """,
+    responses={
+        200: {"description": "Trends data returned successfully"},
+        401: {"description": "Unauthorized - missing X-User-ID header"},
+        500: {"description": "Internal server error"}
+    }
+)
 async def get_case_trends(
     user_id: str = Depends(get_user_id),
     days: int = Query(30, ge=1, le=365),

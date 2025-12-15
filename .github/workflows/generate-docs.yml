@@ -3,8 +3,21 @@ name: Generate Documentation
 on:
   push:
     branches: [main, develop]
+    paths:
+      - 'src/**/api/**'              # API routes
+      - 'src/**/models/**'           # Pydantic models
+      - 'src/**/main.py'             # App entry point
+      - 'scripts/generate_readme.py' # README generator
+      - 'pyproject.toml'             # Version changes
   pull_request:
     branches: [main]
+    paths:
+      - 'src/**/api/**'
+      - 'src/**/models/**'
+      - 'src/**/main.py'
+      - 'scripts/generate_readme.py'
+      - 'pyproject.toml'
+  workflow_dispatch:  # Allow manual trigger for initial setup or debugging
 
 jobs:
   generate-docs:
@@ -63,38 +76,80 @@ jobs:
 
           spec = app.openapi()
           incomplete = []
+          warnings = []
           endpoints_checked = 0
+
+          # Required response codes that should be documented
+          REQUIRED_SUCCESS_CODES = {'200', '201', '204'}
+          REQUIRED_ERROR_CODES = {'400', '401', '404', '422', '500'}
+
+          # Minimum description length for comprehensive docs (chars)
+          MIN_DESCRIPTION_LENGTH = 100
 
           # Check all endpoints for required documentation
           for path, methods in spec.get('paths', {}).items():
               for method, details in methods.items():
                   if method.lower() in ['get', 'post', 'put', 'delete', 'patch']:
                       endpoints_checked += 1
-
-                      # Check for description
-                      if not details.get('description') or details.get('description').strip() == '':
-                          incomplete.append(f'{method.upper()} {path} - missing description')
+                      endpoint_id = f'{method.upper()} {path}'
 
                       # Check for summary
-                      if not details.get('summary') or details.get('summary').strip() == '':
-                          incomplete.append(f'{method.upper()} {path} - missing summary')
+                      summary = details.get('summary', '').strip()
+                      if not summary:
+                          incomplete.append(f'{endpoint_id} - missing summary')
 
-                      # Check for responses
-                      if not details.get('responses') or len(details.get('responses', {})) == 0:
-                          incomplete.append(f'{method.upper()} {path} - missing responses')
+                      # Check for description
+                      description = details.get('description', '').strip()
+                      if not description:
+                          incomplete.append(f'{endpoint_id} - missing description')
+                      elif len(description) < MIN_DESCRIPTION_LENGTH:
+                          incomplete.append(f'{endpoint_id} - description too short ({len(description)} chars, min {MIN_DESCRIPTION_LENGTH})')
+
+                      # Check for responses dict
+                      responses = details.get('responses', {})
+                      if not responses:
+                          incomplete.append(f'{endpoint_id} - missing responses')
+                      else:
+                          response_codes = set(responses.keys())
+
+                          # Check for at least one success code
+                          if not response_codes.intersection(REQUIRED_SUCCESS_CODES):
+                              incomplete.append(f'{endpoint_id} - missing success response (200/201/204)')
+
+                          # Check for 401 (auth required for most endpoints)
+                          if '401' not in response_codes and '/health' not in path:
+                              warnings.append(f'{endpoint_id} - missing 401 response')
+
+                          # Check for 500 (internal error)
+                          if '500' not in response_codes and '/health' not in path:
+                              warnings.append(f'{endpoint_id} - missing 500 response')
 
           print(f'📊 Documentation Validation Report')
           print(f'  Total endpoints checked: {endpoints_checked}')
+          print()
+
+          if warnings:
+              print(f'⚠️  Warnings: {len(warnings)}')
+              for item in warnings:
+                  print(f'    - {item}')
+              print()
 
           if incomplete:
-              print(f'  ❌ Incomplete documentation: {len(incomplete)} issue(s)')
+              print(f'❌ Incomplete documentation: {len(incomplete)} issue(s)')
               print()
-              print('Issues found:')
+              print('Errors (must fix):')
               for item in incomplete:
                   print(f'  - {item}')
+              print()
+              print('Documentation requirements:')
+              print('  - summary: One-line description (required)')
+              print('  - description: Comprehensive docs with examples, workflow, auth info (min 100 chars)')
+              print('  - responses: Dict with success (200/201/204) and error codes (400/401/404/500)')
               sys.exit(1)
           else:
-              print(f'  ✅ All {endpoints_checked} endpoints fully documented')
+              print(f'✅ All {endpoints_checked} endpoints fully documented')
+              if warnings:
+                  print(f'   (with {len(warnings)} non-blocking warnings)')
           "
 
       - name: Generate README
@@ -115,22 +170,41 @@ jobs:
             git diff --staged --stat
           fi
 
-      - name: Commit and push documentation
+      - name: Create Pull Request for documentation updates
         if: |
           github.event_name == 'push' &&
           github.ref == 'refs/heads/main' &&
           steps.check_changes.outputs.has_changes == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "docs: Auto-generate API documentation [skip ci]
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "docs: Auto-generate API documentation"
+          branch: docs/auto-update-${{ github.run_id }}
+          delete-branch: true
+          title: "docs: Auto-update API documentation"
+          body: |
+            ## 🤖 Auto-generated Documentation Update
 
-          - Updated OpenAPI specification (JSON + YAML)
-          - Regenerated README.md from code
-          - Documentation timestamp: $(date -u +'%Y-%m-%d %H:%M UTC')"
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            This PR was automatically created by the documentation workflow.
+
+            ### Changes
+            - Updated OpenAPI specification (JSON + YAML)
+            - Regenerated README.md from code
+
+            ### Trigger
+            - **Commit:** ${{ github.sha }}
+            - **Message:** ${{ github.event.head_commit.message }}
+            - **Author:** ${{ github.event.head_commit.author.name }}
+
+            ### Validation
+            ✅ All endpoints have required documentation (summary, description, responses)
+
+            ---
+            *This PR can be auto-merged if documentation looks correct.*
+          labels: |
+            documentation
+            automated
+          reviewers: ${{ github.actor }}
 
       - name: Upload OpenAPI spec as artifact
         uses: actions/upload-artifact@v3

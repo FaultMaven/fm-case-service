@@ -4,37 +4,58 @@ info:
   description: Microservice for case management
   version: 1.0.0
 paths:
+  /api/v1/cases/health:
+    get:
+      tags:
+      - cases
+      summary: Get case service health
+      description: "Returns health status of the case management subsystem.\n\n**Workflow**:\n\
+        1. Checks case persistence system connectivity\n2. Returns service status\
+        \ and feature flags\n3. No authentication required (health endpoints are public)\n\
+        \n**Response Example**:\n```json\n{\n  \"service\": \"case_management\",\n\
+        \  \"status\": \"healthy\",\n  \"timestamp\": \"2025-11-19T10:30:00Z\",\n\
+        \  \"features\": {\n    \"case_persistence\": true,\n    \"case_sharing\"\
+        : true,\n    \"conversation_history\": true\n  }\n}\n```\n\n**Storage**: No\
+        \ database access (lightweight check)\n**Rate Limits**: None\n**Authorization**:\
+        \ None required (public endpoint)"
+      operationId: get_case_service_health_api_v1_cases_health_get
+      responses:
+        '200':
+          description: Service health status returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Get Case Service Health Api V1 Cases Health Get
+        '500':
+          description: Internal server error - service unhealthy
   /api/v1/cases:
     post:
       tags:
       - cases
       summary: Create new troubleshooting case
       description: "Creates a new troubleshooting case for the authenticated user.\n\
-        \n**Workflow**:\n1. Case created in 'active' status with auto-generated ID\
-        \ (case_XXXX format)\n2. Title auto-generated if not provided (Case-MMDD-N\
-        \ format)\n3. Optional session linking for associating with investigation\
-        \ sessions\n4. User can specify severity, category, metadata, and tags\n\n\
-        **Request Body Example**:\n```json\n{\n  \"title\": \"Redis connection timeouts\
+        \n**Workflow**:\n1. Case created in 'consulting' status with auto-generated\
+        \ ID (case_XXXX format)\n2. Title auto-generated if not provided (Case-MMDD-N\
+        \ format)\n3. User can specify priority, category, and metadata\n\n**Request\
+        \ Body Example**:\n```json\n{\n  \"title\": \"Redis connection timeouts in\
+        \ production\",\n  \"description\": \"Intermittent timeouts on Redis cluster\
+        \ during peak hours\",\n  \"priority\": \"high\",\n  \"category\": \"performance\"\
+        ,\n  \"metadata\": {\"environment\": \"production\", \"cluster\": \"redis-prod-1\"\
+        }\n}\n```\n\n**Response Example**:\n```json\n{\n  \"case_id\": \"case_a1b2c3d4e5f6\"\
+        ,\n  \"owner_id\": \"user_123\",\n  \"title\": \"Redis connection timeouts\
         \ in production\",\n  \"description\": \"Intermittent timeouts on Redis cluster\
-        \ during peak hours\",\n  \"severity\": \"high\",\n  \"category\": \"performance\"\
-        ,\n  \"session_id\": \"session_abc123\",\n  \"metadata\": {\"environment\"\
-        : \"production\", \"cluster\": \"redis-prod-1\"},\n  \"tags\": [\"redis\"\
-        , \"timeout\", \"performance\"]\n}\n```\n\n**Response Example**:\n```json\n\
-        {\n  \"case_id\": \"case_a1b2c3d4e5f6\",\n  \"user_id\": \"user_123\",\n \
-        \ \"session_id\": \"session_abc123\",\n  \"title\": \"Redis connection timeouts\
-        \ in production\",\n  \"description\": \"Intermittent timeouts on Redis cluster\
-        \ during peak hours\",\n  \"status\": \"active\",\n  \"severity\": \"high\"\
-        ,\n  \"category\": \"performance\",\n  \"metadata\": {\"environment\": \"\
-        production\", \"cluster\": \"redis-prod-1\"},\n  \"tags\": [\"redis\", \"\
-        timeout\", \"performance\"],\n  \"created_at\": \"2025-11-19T10:30:00Z\",\n\
-        \  \"updated_at\": \"2025-11-19T10:30:00Z\",\n  \"resolved_at\": null\n}\n\
-        ```\n\n**Storage**: SQLite database (fm_cases.db) with user_id indexing\n\
-        **Rate Limits**: None (enforced at API Gateway level)\n**Authorization**:\
-        \ Requires X-User-ID header from fm-api-gateway\n**User Isolation**: Cases\
-        \ are strictly scoped to the creating user"
+        \ during peak hours\",\n  \"status\": \"consulting\",\n  \"priority\": \"\
+        high\",\n  \"category\": \"performance\",\n  \"metadata\": {\"environment\"\
+        : \"production\", \"cluster\": \"redis-prod-1\"},\n  \"created_at\": \"2025-11-19T10:30:00Z\"\
+        ,\n  \"updated_at\": \"2025-11-19T10:30:00Z\",\n  \"resolved_at\": null,\n\
+        \  \"message_count\": 0\n}\n```\n\n**Storage**: SQLite database (fm_cases.db)\
+        \ with user_id indexing\n**Rate Limits**: None (enforced at API Gateway level)\n\
+        **Authorization**: Requires X-User-ID header from fm-api-gateway\n**User Isolation**:\
+        \ Cases are strictly scoped to the creating user"
       operationId: create_case_api_v1_cases_post
       parameters:
-      - name: x-user-id
+      - name: X-User-ID
         in: header
         required: false
         schema:
@@ -83,10 +104,10 @@ paths:
         Headers:\n  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n\
         \  \"cases\": [\n    {\n      \"case_id\": \"case_a1b2c3d4e5f6\",\n      \"\
         title\": \"Redis timeout issue\",\n      \"status\": \"investigating\",\n\
-        \      \"severity\": \"high\",\n      \"created_at\": \"2025-11-19T10:30:00Z\"\
+        \      \"priority\": \"high\",\n      \"created_at\": \"2025-11-19T10:30:00Z\"\
         ,\n      ...\n    },\n    {\n      \"case_id\": \"case_x7y8z9a0b1c2\",\n \
         \     \"title\": \"API latency spike\",\n      \"status\": \"investigating\"\
-        ,\n      \"severity\": \"medium\",\n      \"created_at\": \"2025-11-18T14:20:00Z\"\
+        ,\n      \"priority\": \"medium\",\n      \"created_at\": \"2025-11-18T14:20:00Z\"\
         ,\n      ...\n    }\n  ],\n  \"total\": 15,\n  \"page\": 1,\n  \"page_size\"\
         : 20\n}\n```\n\n**Pagination Calculation**:\n- `total`: Total number of cases\
         \ matching filter\n- `total_pages`: ceil(total / page_size)\n- Use `page`\
@@ -121,7 +142,7 @@ paths:
           minimum: 1
           default: 50
           title: Page Size
-      - name: x-user-id
+      - name: X-User-ID
         in: header
         required: false
         schema:
@@ -176,7 +197,7 @@ paths:
         schema:
           type: string
           title: Case Id
-      - name: x-user-id
+      - name: X-User-ID
         in: header
         required: false
         schema:
@@ -209,22 +230,21 @@ paths:
       summary: Update case details
       description: "Updates an existing case with new information. All fields are\
         \ optional.\n\n**Updatable Fields**:\n- `title`: Case title (max 200 characters)\n\
-        - `description`: Detailed description\n- `status`: Case status (active/investigating/resolved/archived/closed)\n\
-        - `severity`: Severity level (low/medium/high/critical)\n- `category`: Category\
+        - `description`: Detailed description\n- `status`: Case status (consulting/investigating/resolved/closed)\n\
+        - `priority`: Priority level (low/medium/high/critical)\n- `category`: Category\
         \ (performance/error/configuration/infrastructure/security/other)\n- `metadata`:\
-        \ Custom metadata dictionary (merged with existing)\n- `tags`: Tag list (replaces\
-        \ existing tags)\n\n**Request Example**:\n```json\n{\n  \"status\": \"investigating\"\
-        ,\n  \"severity\": \"critical\",\n  \"description\": \"Issue escalated - affecting\
-        \ 50% of users\",\n  \"metadata\": {\"escalated\": true, \"affected_users\"\
-        : 500},\n  \"tags\": [\"redis\", \"timeout\", \"critical\", \"escalated\"\
-        ]\n}\n```\n\n**Response Example**:\n```json\n{\n  \"case_id\": \"case_a1b2c3d4e5f6\"\
-        ,\n  \"status\": \"investigating\",\n  \"severity\": \"critical\",\n  \"updated_at\"\
-        : \"2025-11-19T12:30:00Z\",\n  ...\n}\n```\n\n**Behavior**:\n- Only provided\
-        \ fields are updated (partial updates supported)\n- `updated_at` timestamp\
-        \ automatically updated\n- `resolved_at` set automatically when status changes\
-        \ to 'resolved'\n- Users can only update their own cases\n\n**Storage**: SQLite\
-        \ update with optimistic locking\n**Authorization**: Requires X-User-ID header\n\
-        **User Isolation**: Update only succeeds if case belongs to user"
+        \ Custom metadata dictionary (merged with existing)\n\n**Request Example**:\n\
+        ```json\n{\n  \"status\": \"investigating\",\n  \"priority\": \"critical\"\
+        ,\n  \"description\": \"Issue escalated - affecting 50% of users\",\n  \"\
+        metadata\": {\"escalated\": true, \"affected_users\": 500}\n}\n```\n\n**Response\
+        \ Example**:\n```json\n{\n  \"case_id\": \"case_a1b2c3d4e5f6\",\n  \"status\"\
+        : \"investigating\",\n  \"priority\": \"critical\",\n  \"updated_at\": \"\
+        2025-11-19T12:30:00Z\",\n  ...\n}\n```\n\n**Behavior**:\n- Only provided fields\
+        \ are updated (partial updates supported)\n- `updated_at` timestamp automatically\
+        \ updated\n- `resolved_at` set automatically when status changes to 'resolved'\n\
+        - Users can only update their own cases\n\n**Storage**: SQLite update with\
+        \ optimistic locking\n**Authorization**: Requires X-User-ID header\n**User\
+        \ Isolation**: Update only succeeds if case belongs to user"
       operationId: update_case_api_v1_cases__case_id__put
       parameters:
       - name: case_id
@@ -233,7 +253,7 @@ paths:
         schema:
           type: string
           title: Case Id
-      - name: x-user-id
+      - name: X-User-ID
         in: header
         required: false
         schema:
@@ -294,7 +314,7 @@ paths:
         schema:
           type: string
           title: Case Id
-      - name: x-user-id
+      - name: X-User-ID
         in: header
         required: false
         schema:
@@ -311,6 +331,138 @@ paths:
           description: Case not found or access denied
         '500':
           description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/ui:
+    get:
+      tags:
+      - cases
+      summary: Get case UI data
+      description: "Returns phase-adaptive UI-optimized case data in a single response.\n\
+        \n**Workflow**:\n1. Retrieves case by ID with user ownership validation\n\
+        2. Transforms case data into UI-friendly format\n3. Includes phase-specific\
+        \ UI hints and state\n\n**Use Case**: Frontend applications can fetch all\
+        \ required UI state in a single call,\nreducing round-trips and improving\
+        \ perceived performance.\n\n**Request Example**:\n```\nGET /api/v1/cases/case_abc123/ui\n\
+        Headers:\n  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n\
+        \  \"case_id\": \"case_abc123\",\n  \"title\": \"Redis connection timeouts\"\
+        ,\n  \"description\": \"Intermittent timeouts on Redis cluster\",\n  \"status\"\
+        : \"investigating\",\n  \"priority\": \"high\",\n  \"created_at\": \"2025-11-19T10:30:00Z\"\
+        ,\n  \"updated_at\": \"2025-11-19T11:15:00Z\"\n}\n```\n\n**Storage**: SQLite\
+        \ read with user_id filter\n**Rate Limits**: None (enforced at API Gateway\
+        \ level)\n**Authorization**: Requires X-User-ID header\n**User Isolation**:\
+        \ Only case owner can access UI data"
+      operationId: get_case_ui_api_v1_cases__case_id__ui_get
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: UI-optimized case data returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Get Case Ui Api V1 Cases  Case Id  Ui Get
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to access this case
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/title:
+    post:
+      tags:
+      - cases
+      summary: Generate case title
+      description: "Generates or retrieves a concise, case-specific title based on\
+        \ case content.\n\n**Workflow**:\n1. If case has meaningful existing title\
+        \ and force=false, returns existing title\n2. Otherwise, generates new title\
+        \ from case messages and metadata\n3. Updates case with generated title\n\n\
+        **Query Parameters**:\n- `force` (default: false): Force overwrite of existing\
+        \ meaningful title\n\n**Request Body** (optional):\n```json\n{\n  \"max_words\"\
+        : 8,\n  \"hint\": \"focus on the root cause\"\n}\n```\n\n**Response Example**:\n\
+        ```json\n{\n  \"title\": \"Redis Connection Timeout Investigation\",\n  \"\
+        case_id\": \"case_abc123\",\n  \"source\": \"generated\",\n  \"generated\"\
+        : true\n}\n```\n\n**Title Generation Rules**:\n- Default titles (\"New Case\"\
+        , \"Untitled\") are always regenerated\n- Titles with < 3 words are considered\
+        \ non-meaningful\n- max_words must be between 3-12 (default: 8)\n\n**Storage**:\
+        \ SQLite read/write with user_id filter\n**Rate Limits**: None (enforced at\
+        \ API Gateway level)\n**Authorization**: Requires X-User-ID header\n**User\
+        \ Isolation**: Only case owner can generate titles"
+      operationId: generate_case_title_api_v1_cases__case_id__title_post
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: force
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Force overwrite of existing title
+          default: false
+          title: Force
+        description: Force overwrite of existing title
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - type: object
+              - type: 'null'
+              title: Title Request
+      responses:
+        '200':
+          description: Title generated or existing title returned
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Generate Case Title Api V1 Cases  Case Id  Title Post
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to modify this case
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error - title generation failed
         '422':
           description: Validation Error
           content:
@@ -365,7 +517,7 @@ paths:
           minimum: 1
           default: 50
           title: Page Size
-      - name: x-user-id
+      - name: X-User-ID
         in: header
         required: false
         schema:
@@ -425,7 +577,7 @@ paths:
         schema:
           type: string
           title: Case Id
-      - name: x-user-id
+      - name: X-User-ID
         in: header
         required: false
         schema:
@@ -460,31 +612,1445 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/data:
+    get:
+      tags:
+      - cases
+      summary: List case data
+      description: "Lists all data files and artifacts associated with a case.\n\n\
+        **Workflow**:\n1. Validates case exists and user has access\n2. Retrieves\
+        \ paginated list of data records\n3. Returns data metadata (not file contents)\n\
+        \n**Query Parameters**:\n- `limit` (default: 50, max: 200): Maximum number\
+        \ of items to return\n- `offset` (default: 0): Number of items to skip for\
+        \ pagination\n\n**Request Example**:\n```\nGET /api/v1/cases/case_abc123/data?limit=20&offset=0\n\
+        Headers:\n  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n\
+        \  \"case_id\": \"case_abc123\",\n  \"data\": [\n    {\n      \"data_id\"\
+        : \"data_xyz789\",\n      \"filename\": \"error_logs.txt\",\n      \"data_type\"\
+        : \"log_file\",\n      \"size_bytes\": 15360,\n      \"upload_timestamp\"\
+        : \"2025-11-19T10:30:00Z\"\n    }\n  ],\n  \"total\": 5,\n  \"limit\": 20,\n\
+        \  \"offset\": 0\n}\n```\n\n**Storage**: SQLite query with user_id filter\n\
+        **Rate Limits**: None (enforced at API Gateway level)\n**Authorization**:\
+        \ Requires X-User-ID header\n**User Isolation**: Only case owner can list\
+        \ data"
+      operationId: list_case_data_api_v1_cases__case_id__data_get
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          description: Maximum number of items to return
+          default: 50
+          title: Limit
+        description: Maximum number of items to return
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Number of items to skip
+          default: 0
+          title: Offset
+        description: Number of items to skip
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Data list returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response List Case Data Api V1 Cases  Case Id  Data Get
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to access this case
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - cases
+      summary: Add evidence/data to case
+      description: "Adds evidence or data files to a case for investigation.\n\n**Workflow**:\n\
+        1. Validates case exists and user has access\n2. Processes and stores the\
+        \ evidence data\n3. Returns updated case with new evidence attached\n\n**Request\
+        \ Body Example**:\n```json\n{\n  \"type\": \"log_file\",\n  \"filename\":\
+        \ \"application.log\",\n  \"content\": \"2025-11-19 10:30:00 ERROR Connection\
+        \ timeout...\",\n  \"metadata\": {\n    \"source\": \"production-server-01\"\
+        ,\n    \"log_level\": \"ERROR\"\n  }\n}\n```\n\n**Response Example**:\n```json\n\
+        {\n  \"case_id\": \"case_abc123\",\n  \"user_id\": \"user_123\",\n  \"title\"\
+        : \"Connection timeout investigation\",\n  \"status\": \"investigating\",\n\
+        \  ...\n}\n```\n\n**Evidence Types**:\n- `log_file`: Application or system\
+        \ logs\n- `config_file`: Configuration files\n- `screenshot`: UI screenshots\n\
+        - `trace`: Stack traces or distributed traces\n- `metrics`: Performance metrics\n\
+        \n**Storage**: SQLite with file storage for large content\n**Rate Limits**:\
+        \ None (enforced at API Gateway level)\n**Authorization**: Requires X-User-ID\
+        \ header\n**User Isolation**: Only case owner can add evidence"
+      operationId: add_case_data_api_v1_cases__case_id__data_post
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              title: Evidence Data
+      responses:
+        '200':
+          description: Evidence added successfully, returns updated case
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseResponse'
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/data/{data_id}:
+    get:
+      tags:
+      - cases
+      summary: Get case data
+      description: "Retrieves details for a specific data file attached to a case.\n\
+        \n**Workflow**:\n1. Validates case exists and user has access\n2. Retrieves\
+        \ data record by ID\n3. Returns data metadata and processing status\n\n**Request\
+        \ Example**:\n```\nGET /api/v1/cases/case_abc123/data/data_xyz789\nHeaders:\n\
+        \  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n  \"data_id\"\
+        : \"data_xyz789\",\n  \"case_id\": \"case_abc123\",\n  \"filename\": \"error_logs.txt\"\
+        ,\n  \"description\": \"Application error logs from production\",\n  \"data_type\"\
+        : \"log_file\",\n  \"size_bytes\": 15360,\n  \"upload_timestamp\": \"2025-11-19T10:30:00Z\"\
+        ,\n  \"processing_status\": \"completed\"\n}\n```\n\n**Data Types**:\n- `log_file`:\
+        \ Application or system logs\n- `config_file`: Configuration files\n- `screenshot`:\
+        \ UI screenshots\n- `trace`: Distributed traces or stack traces\n- `metrics`:\
+        \ Metrics data exports\n- `other`: Uncategorized data\n\n**Storage**: SQLite\
+        \ query with user_id filter\n**Rate Limits**: None (enforced at API Gateway\
+        \ level)\n**Authorization**: Requires X-User-ID header\n**User Isolation**:\
+        \ Only case owner can access data"
+      operationId: get_case_data_api_v1_cases__case_id__data__data_id__get
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: data_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Data Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Data record details returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Get Case Data Api V1 Cases  Case Id  Data  Data Id  Get
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to access this case
+        '404':
+          description: Case or data record not found
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - cases
+      summary: Delete case data
+      description: "Permanently deletes a data file from a case.\n\n**WARNING**: This\
+        \ operation is irreversible. The data file and all associated\nmetadata will\
+        \ be permanently deleted.\n\n**Workflow**:\n1. Validates case exists and user\
+        \ has access\n2. Deletes data record and associated file storage\n3. Returns\
+        \ 204 No Content on success\n\n**Request Example**:\n```\nDELETE /api/v1/cases/case_abc123/data/data_xyz789\n\
+        Headers:\n  X-User-ID: user_123\n```\n\n**Response**:\n```\n204 No Content\
+        \ (success, no body returned)\n404 Not Found (case or data doesn't exist)\n\
+        ```\n\n**Behavior**:\n- Data record is permanently removed\n- Associated file\
+        \ in storage is deleted\n- Operation is idempotent (deleting non-existent\
+        \ data returns 404)\n\n**Storage**: SQLite delete with file storage cleanup\n\
+        **Rate Limits**: None (enforced at API Gateway level)\n**Authorization**:\
+        \ Requires X-User-ID header\n**User Isolation**: Only case owner can delete\
+        \ data"
+      operationId: delete_case_data_api_v1_cases__case_id__data__data_id__delete
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: data_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Data Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '204':
+          description: Data deleted successfully (no content returned)
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to delete from this case
+        '404':
+          description: Case or data record not found
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/evidence/{evidence_id}:
+    get:
+      tags:
+      - cases
+      summary: Get specific evidence by ID
+      description: "Retrieves a specific evidence item from a case by its ID.\n\n\
+        **Workflow**:\n1. Validates case exists and user has access\n2. Retrieves\
+        \ evidence by ID from case\n3. Returns evidence details and content\n\n**Request\
+        \ Example**:\n```\nGET /api/v1/cases/case_abc123/evidence/ev_xyz789\nHeaders:\n\
+        \  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n  \"evidence_id\"\
+        : \"ev_xyz789\",\n  \"case_id\": \"case_abc123\",\n  \"type\": \"log_file\"\
+        ,\n  \"filename\": \"error.log\",\n  \"content\": \"2025-11-19 ERROR: Connection\
+        \ refused...\",\n  \"created_at\": \"2025-11-19T10:30:00Z\",\n  \"metadata\"\
+        : {\"source\": \"production\"}\n}\n```\n\n**Storage**: SQLite query with user_id\
+        \ filter\n**Rate Limits**: None (enforced at API Gateway level)\n**Authorization**:\
+        \ Requires X-User-ID header\n**User Isolation**: Only case owner can access\
+        \ evidence"
+      operationId: get_case_evidence_api_v1_cases__case_id__evidence__evidence_id__get
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: evidence_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Evidence Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Evidence details returned successfully
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '404':
+          description: Case or evidence not found
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/uploaded-files:
+    get:
+      tags:
+      - cases
+      summary: Get uploaded files for case
+      description: "Lists all files uploaded to a case during investigation.\n\n**Workflow**:\n\
+        1. Validates case exists and user has access\n2. Retrieves list of uploaded\
+        \ files\n3. Returns file metadata and processing status\n\n**Request Example**:\n\
+        ```\nGET /api/v1/cases/case_abc123/uploaded-files\nHeaders:\n  X-User-ID:\
+        \ user_123\n```\n\n**Response Example**:\n```json\n{\n  \"files\": [\n   \
+        \ {\n      \"file_id\": \"file_xyz789\",\n      \"filename\": \"screenshot.png\"\
+        ,\n      \"content_type\": \"image/png\",\n      \"size_bytes\": 102400,\n\
+        \      \"upload_timestamp\": \"2025-11-19T10:30:00Z\",\n      \"status\":\
+        \ \"processed\"\n    }\n  ],\n  \"total\": 3\n}\n```\n\n**Storage**: SQLite\
+        \ query with file storage references\n**Rate Limits**: None (enforced at API\
+        \ Gateway level)\n**Authorization**: Requires X-User-ID header\n**User Isolation**:\
+        \ Only case owner can list files"
+      operationId: get_uploaded_files_api_v1_cases__case_id__uploaded_files_get
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: File list returned successfully
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/uploaded-files/{file_id}:
+    get:
+      tags:
+      - cases
+      summary: Get uploaded file details
+      description: "Retrieves detailed information for a specific uploaded file.\n\
+        \n**Workflow**:\n1. Validates case exists and user has access\n2. Retrieves\
+        \ file metadata by ID\n3. Returns file details including derived evidence\n\
+        \n**Request Example**:\n```\nGET /api/v1/cases/case_abc123/uploaded-files/file_xyz789\n\
+        Headers:\n  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n\
+        \  \"file_id\": \"file_xyz789\",\n  \"case_id\": \"case_abc123\",\n  \"filename\"\
+        : \"error_screenshot.png\",\n  \"content_type\": \"image/png\",\n  \"size_bytes\"\
+        : 102400,\n  \"upload_timestamp\": \"2025-11-19T10:30:00Z\",\n  \"status\"\
+        : \"processed\",\n  \"derived_evidence\": [\n    {\"type\": \"text_extraction\"\
+        , \"content\": \"Error: Connection refused\"}\n  ]\n}\n```\n\n**File Processing\
+        \ Status**:\n- `pending`: File uploaded, awaiting processing\n- `processing`:\
+        \ File being analyzed\n- `processed`: Processing complete, evidence extracted\n\
+        - `failed`: Processing failed\n\n**Storage**: SQLite query with file storage\
+        \ reference\n**Rate Limits**: None (enforced at API Gateway level)\n**Authorization**:\
+        \ Requires X-User-ID header\n**User Isolation**: Only case owner can access\
+        \ file details"
+      operationId: get_uploaded_file_details_api_v1_cases__case_id__uploaded_files__file_id__get
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: file_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: File Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: File details returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Get Uploaded File Details Api V1 Cases  Case Id  Uploaded
+                  Files  File Id  Get
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to access this case
+        '404':
+          description: Case or file not found
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/close:
+    post:
+      tags:
+      - cases
+      summary: Close a case
+      description: "Closes a case, marking the investigation as complete.\n\n**Workflow**:\n\
+        1. Validates case exists and user has access\n2. Updates case status to 'closed'\n\
+        3. Records closure metadata (resolution, notes)\n4. Returns updated case\n\
+        \n**Request Body** (optional):\n```json\n{\n  \"resolution\": \"resolved\"\
+        ,\n  \"resolution_notes\": \"Root cause identified as misconfigured timeout\"\
+        ,\n  \"resolved_by\": \"Increased connection timeout to 30s\"\n}\n```\n\n\
+        **Response Example**:\n```json\n{\n  \"case_id\": \"case_abc123\",\n  \"status\"\
+        : \"closed\",\n  \"resolved_at\": \"2025-11-19T15:30:00Z\",\n  ...\n}\n```\n\
+        \n**Closure Types**:\n- `resolved`: Issue successfully resolved\n- `not_reproducible`:\
+        \ Could not reproduce the issue\n- `duplicate`: Duplicate of another case\n\
+        - `wont_fix`: Issue acknowledged but won't be fixed\n- `invalid`: Not a valid\
+        \ issue\n\n**Storage**: SQLite update with timestamp management\n**Rate Limits**:\
+        \ None (enforced at API Gateway level)\n**Authorization**: Requires X-User-ID\
+        \ header\n**User Isolation**: Only case owner can close case"
+      operationId: close_case_api_v1_cases__case_id__close_post
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - type: object
+              - type: 'null'
+              title: Close Data
+      responses:
+        '200':
+          description: Case closed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseResponse'
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/search:
+    post:
+      tags:
+      - cases
+      summary: Search cases
+      description: "Searches cases with flexible filtering criteria.\n\n**Workflow**:\n\
+        1. Validates search parameters\n2. Executes search query with user isolation\n\
+        3. Returns paginated results\n\n**Request Body Example**:\n```json\n{\n  \"\
+        query\": \"connection timeout\",\n  \"status\": [\"investigating\", \"active\"\
+        ],\n  \"severity\": [\"high\", \"critical\"],\n  \"category\": \"performance\"\
+        ,\n  \"date_from\": \"2025-11-01T00:00:00Z\",\n  \"date_to\": \"2025-11-30T23:59:59Z\"\
+        ,\n  \"tags\": [\"redis\", \"database\"],\n  \"page\": 1,\n  \"page_size\"\
+        : 20\n}\n```\n\n**Response Example**:\n```json\n{\n  \"cases\": [...],\n \
+        \ \"total\": 15,\n  \"page\": 1,\n  \"page_size\": 20\n}\n```\n\n**Search\
+        \ Fields**:\n- `query`: Full-text search in title and description\n- `status`:\
+        \ Filter by status (array)\n- `severity`: Filter by severity (array)\n- `category`:\
+        \ Filter by category\n- `date_from`/`date_to`: Date range filter\n- `tags`:\
+        \ Filter by tags (AND logic)\n\n**Storage**: SQLite full-text search with\
+        \ user_id filter\n**Rate Limits**: None (enforced at API Gateway level)\n\
+        **Authorization**: Requires X-User-ID header\n**User Isolation**: Only searches\
+        \ user's own cases"
+      operationId: search_cases_api_v1_cases_search_post
+      parameters:
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              title: Search Params
+      responses:
+        '200':
+          description: Search results returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseListResponse'
+        '400':
+          description: Invalid search parameters
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/hypotheses:
+    post:
+      tags:
+      - cases
+      summary: Add hypothesis to case
+      description: "Adds a new hypothesis to an investigation case for tracking potential\
+        \ root causes.\n\n**Workflow**:\n1. Validates case exists and user has access\n\
+        2. Creates hypothesis with initial status\n3. Returns hypothesis ID and updated\
+        \ count\n\n**Request Body Example**:\n```json\n{\n  \"title\": \"Redis connection\
+        \ pool exhaustion\",\n  \"description\": \"High load causing connection pool\
+        \ to be exhausted\",\n  \"confidence\": 0.7,\n  \"evidence\": [\"Connection\
+        \ timeout errors in logs\", \"Pool size at max\"],\n  \"suggested_tests\"\
+        : [\"Increase pool size\", \"Check connection leaks\"]\n}\n```\n\n**Response\
+        \ Example**:\n```json\n{\n  \"case_id\": \"case_abc123\",\n  \"hypothesis\"\
+        : {...},\n  \"total_hypotheses\": 3\n}\n```\n\n**Hypothesis Status Values**:\n\
+        - `proposed`: Initial state\n- `testing`: Under investigation\n- `confirmed`:\
+        \ Validated as root cause\n- `rejected`: Ruled out\n- `deferred`: Put on hold\n\
+        \n**Storage**: SQLite with JSONB for hypothesis data\n**Rate Limits**: None\
+        \ (enforced at API Gateway level)\n**Authorization**: Requires X-User-ID header\n\
+        **User Isolation**: Only case owner can add hypotheses"
+      operationId: add_hypothesis_api_v1_cases__case_id__hypotheses_post
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              title: Hypothesis Data
+      responses:
+        '200':
+          description: Hypothesis added successfully
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/hypotheses/{hypothesis_id}:
+    put:
+      tags:
+      - cases
+      summary: Update hypothesis
+      description: "Updates an existing hypothesis with new status, confidence, or\
+        \ evidence.\n\n**Workflow**:\n1. Validates case and hypothesis exist\n2. Applies\
+        \ partial updates to hypothesis\n3. Returns updated hypothesis\n\n**Request\
+        \ Body Example**:\n```json\n{\n  \"status\": \"confirmed\",\n  \"confidence\"\
+        : 0.95,\n  \"confirmation_evidence\": \"Load test confirmed pool exhaustion\
+        \ under high load\",\n  \"resolution\": \"Increased pool size from 10 to 50\"\
+        \n}\n```\n\n**Response Example**:\n```json\n{\n  \"hypothesis_id\": \"hyp_xyz789\"\
+        ,\n  \"case_id\": \"case_abc123\",\n  \"title\": \"Redis connection pool exhaustion\"\
+        ,\n  \"status\": \"confirmed\",\n  \"confidence\": 0.95,\n  \"updated_at\"\
+        : \"2025-11-19T15:30:00Z\"\n}\n```\n\n**Updatable Fields**:\n- `status`: Hypothesis\
+        \ status\n- `confidence`: Confidence score (0.0-1.0)\n- `evidence`: Additional\
+        \ evidence array\n- `confirmation_evidence`: Evidence confirming/rejecting\n\
+        - `resolution`: How the issue was resolved\n\n**Storage**: SQLite update with\
+        \ JSONB merge\n**Rate Limits**: None (enforced at API Gateway level)\n**Authorization**:\
+        \ Requires X-User-ID header\n**User Isolation**: Only case owner can update\
+        \ hypotheses"
+      operationId: update_hypothesis_api_v1_cases__case_id__hypotheses__hypothesis_id__put
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: hypothesis_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Hypothesis Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              title: Updates
+      responses:
+        '200':
+          description: Hypothesis updated successfully
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '404':
+          description: Case or hypothesis not found
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/queries:
+    post:
+      tags:
+      - cases
+      summary: Submit case query
+      description: "Submits a user message or query to the case investigation.\n\n\
+        **Workflow**:\n1. Validates case exists and user has access\n2. Stores query\
+        \ in case history\n3. Returns query acknowledgment\n\n**Request Body Example**:\n\
+        ```json\n{\n  \"message\": \"What are the common causes of Redis connection\
+        \ timeouts?\",\n  \"context\": {\n    \"current_focus\": \"connection_pool\"\
+        \n  }\n}\n```\n\n**Response Example**:\n```json\n{\n  \"case_id\": \"case_abc123\"\
+        ,\n  \"message\": \"What are the common causes...\",\n  \"status\": \"received\"\
+        ,\n  \"timestamp\": \"2025-11-19T10:30:00Z\"\n}\n```\n\n**Query Types**:\n\
+        - Investigation questions\n- Troubleshooting commands\n- Evidence requests\n\
+        - Hypothesis proposals\n\n**Storage**: SQLite with message history\n**Rate\
+        \ Limits**: None (enforced at API Gateway level)\n**Authorization**: Requires\
+        \ X-User-ID header\n**User Isolation**: Only case owner can submit queries"
+      operationId: submit_case_query_api_v1_cases__case_id__queries_post
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              title: Query Data
+      responses:
+        '200':
+          description: Query submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Submit Case Query Api V1 Cases  Case Id  Queries Post
+        '400':
+          description: Invalid query data - message required
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to query this case
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - cases
+      summary: Get case query history
+      description: "Retrieves the history of user queries submitted to this case.\n\
+        \n**Workflow**:\n1. Validates case exists and user has access\n2. Retrieves\
+        \ query history\n3. Returns chronologically ordered queries\n\n**Request Example**:\n\
+        ```\nGET /api/v1/cases/case_abc123/queries\nHeaders:\n  X-User-ID: user_123\n\
+        ```\n\n**Response Example**:\n```json\n{\n  \"case_id\": \"case_abc123\",\n\
+        \  \"queries\": [\n    {\n      \"query_id\": \"q_001\",\n      \"message\"\
+        : \"What causes connection timeouts?\",\n      \"timestamp\": \"2025-11-19T10:30:00Z\"\
+        ,\n      \"response_status\": \"answered\"\n    }\n  ],\n  \"total\": 5\n\
+        }\n```\n\n**Storage**: SQLite query with user_id filter\n**Rate Limits**:\
+        \ None (enforced at API Gateway level)\n**Authorization**: Requires X-User-ID\
+        \ header\n**User Isolation**: Only case owner can view query history"
+      operationId: get_case_queries_api_v1_cases__case_id__queries_get
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Query history returned successfully
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/messages:
+    get:
+      tags:
+      - cases
+      summary: Get case messages
+      description: "Retrieves conversation messages for a case with pagination support.\n\
+        \n**Workflow**:\n1. Validates case exists and user has access\n2. Retrieves\
+        \ paginated message history\n3. Returns messages with metadata\n\n**Query\
+        \ Parameters**:\n- `limit` (default: 50, max: 100): Maximum messages to return\n\
+        - `offset` (default: 0): Pagination offset\n- `include_debug` (default: false):\
+        \ Include debug metadata\n\n**Request Example**:\n```\nGET /api/v1/cases/case_abc123/messages?limit=20&offset=0\n\
+        Headers:\n  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n\
+        \  \"case_id\": \"case_abc123\",\n  \"messages\": [\n    {\n      \"message_id\"\
+        : \"msg_001\",\n      \"role\": \"user\",\n      \"content\": \"I'm seeing\
+        \ connection timeouts\",\n      \"timestamp\": \"2025-11-19T10:30:00Z\"\n\
+        \    },\n    {\n      \"message_id\": \"msg_002\",\n      \"role\": \"assistant\"\
+        ,\n      \"content\": \"Let me help investigate...\",\n      \"timestamp\"\
+        : \"2025-11-19T10:30:05Z\"\n    }\n  ],\n  \"total_count\": 50,\n  \"retrieved_count\"\
+        : 20,\n  \"limit\": 20,\n  \"offset\": 0\n}\n```\n\n**Message Roles**:\n-\
+        \ `user`: User messages\n- `assistant`: AI assistant responses\n- `system`:\
+        \ System notifications\n\n**Storage**: SQLite with message pagination\n**Rate\
+        \ Limits**: None (enforced at API Gateway level)\n**Authorization**: Requires\
+        \ X-User-ID header\n**User Isolation**: Only case owner can view messages"
+      operationId: get_case_messages_api_v1_cases__case_id__messages_get
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Maximum number of messages to return
+          default: 50
+          title: Limit
+        description: Maximum number of messages to return
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Offset for pagination
+          default: 0
+          title: Offset
+        description: Offset for pagination
+      - name: include_debug
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Include debug information for troubleshooting
+          default: false
+          title: Include Debug
+        description: Include debug information for troubleshooting
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Messages returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Get Case Messages Api V1 Cases  Case Id  Messages
+                  Get
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to access this case
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/analytics:
+    get:
+      tags:
+      - cases
+      summary: Get case analytics
+      description: "Returns analytics and metrics for a specific case.\n\n**Workflow**:\n\
+        1. Validates case exists and user has access\n2. Calculates case metrics\n\
+        3. Returns analytics summary\n\n**Request Example**:\n```\nGET /api/v1/cases/case_abc123/analytics\n\
+        Headers:\n  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n\
+        \  \"case_id\": \"case_abc123\",\n  \"message_count\": 25,\n  \"participant_count\"\
+        : 1,\n  \"resolution_time_minutes\": 120,\n  \"status\": \"resolved\",\n \
+        \ \"hypotheses_count\": 3,\n  \"evidence_count\": 5,\n  \"first_response_time_seconds\"\
+        : 15\n}\n```\n\n**Metrics Included**:\n- `message_count`: Total messages in\
+        \ case\n- `participant_count`: Number of participants\n- `resolution_time_minutes`:\
+        \ Time to resolution (if resolved)\n- `hypotheses_count`: Number of hypotheses\
+        \ generated\n- `evidence_count`: Number of evidence items attached\n\n**Storage**:\
+        \ SQLite aggregation queries\n**Rate Limits**: None (enforced at API Gateway\
+        \ level)\n**Authorization**: Requires X-User-ID header\n**User Isolation**:\
+        \ Only case owner can view analytics"
+      operationId: get_case_analytics_api_v1_cases__case_id__analytics_get
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Analytics data returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Get Case Analytics Api V1 Cases  Case Id  Analytics
+                  Get
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to access this case
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/report-recommendations:
+    get:
+      tags:
+      - cases
+      summary: Get report recommendations
+      description: "Returns intelligent recommendations for which reports to generate\
+        \ for a case.\n\n**Workflow**:\n1. Analyzes case content and status\n2. Determines\
+        \ applicable report types\n3. Returns prioritized recommendations\n\n**Request\
+        \ Example**:\n```\nGET /api/v1/cases/case_abc123/report-recommendations\n\
+        Headers:\n  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n\
+        \  \"case_id\": \"case_abc123\",\n  \"available_reports\": [\"incident_report\"\
+        , \"post_mortem\", \"runbook\"],\n  \"recommended_reports\": [\n    {\n  \
+        \    \"type\": \"post_mortem\",\n      \"reason\": \"Case resolved with root\
+        \ cause identified\",\n      \"priority\": \"high\"\n    }\n  ],\n  \"similar_runbooks\"\
+        : [\n    {\"id\": \"rb_001\", \"title\": \"Redis Connection Issues\", \"similarity\"\
+        : 0.85}\n  ]\n}\n```\n\n**Report Types**:\n- `incident_report`: Standard incident\
+        \ documentation\n- `post_mortem`: Root cause analysis document\n- `runbook`:\
+        \ Operational runbook for similar issues\n- `timeline`: Event timeline summary\n\
+        \n**Storage**: SQLite with vector similarity search\n**Rate Limits**: None\
+        \ (enforced at API Gateway level)\n**Authorization**: Requires X-User-ID header\n\
+        **User Isolation**: Only case owner can get recommendations"
+      operationId: get_report_recommendations_api_v1_cases__case_id__report_recommendations_get
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Recommendations returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Get Report Recommendations Api V1 Cases  Case Id  Report
+                  Recommendations Get
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to access this case
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/reports:
+    post:
+      tags:
+      - cases
+      summary: Generate case reports
+      description: "Generates documentation reports for a case.\n\n**Workflow**:\n\
+        1. Validates case exists and user has access\n2. Queues report generation\
+        \ for requested types\n3. Returns report IDs for tracking\n\n**Request Body\
+        \ Example**:\n```json\n{\n  \"report_types\": [\"incident_report\", \"post_mortem\"\
+        ],\n  \"options\": {\n    \"include_timeline\": true,\n    \"include_evidence\"\
+        : true,\n    \"format\": \"markdown\"\n  }\n}\n```\n\n**Response Example**:\n\
+        ```json\n{\n  \"case_id\": \"case_abc123\",\n  \"report_types\": [\"incident_report\"\
+        , \"post_mortem\"],\n  \"status\": \"generating\",\n  \"reports\": [\n   \
+        \ {\"type\": \"incident_report\", \"report_id\": \"rpt_001\", \"status\":\
+        \ \"pending\"},\n    {\"type\": \"post_mortem\", \"report_id\": \"rpt_002\"\
+        , \"status\": \"pending\"}\n  ]\n}\n```\n\n**Report Types**:\n- `incident_report`:\
+        \ Standard incident documentation\n- `post_mortem`: Detailed root cause analysis\n\
+        - `runbook`: Operational runbook\n- `summary`: Brief case summary\n\n**Storage**:\
+        \ SQLite with async report generation\n**Rate Limits**: None (enforced at\
+        \ API Gateway level)\n**Authorization**: Requires X-User-ID header\n**User\
+        \ Isolation**: Only case owner can generate reports"
+      operationId: generate_case_reports_api_v1_cases__case_id__reports_post
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              title: Report Request
+      responses:
+        '200':
+          description: Report generation started
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Generate Case Reports Api V1 Cases  Case Id  Reports
+                  Post
+        '400':
+          description: Invalid request - at least one report type required
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to generate reports
+        '404':
+          description: Case not found
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - cases
+      summary: Get case reports
+      description: "Retrieves generated reports for a case.\n\n**Workflow**:\n1. Validates\
+        \ case exists and user has access\n2. Retrieves report list (current or historical)\n\
+        3. Returns report metadata\n\n**Query Parameters**:\n- `include_history` (default:\
+        \ false): Include all report versions\n\n**Request Example**:\n```\nGET /api/v1/cases/case_abc123/reports?include_history=false\n\
+        Headers:\n  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n\
+        \  \"case_id\": \"case_abc123\",\n  \"reports\": [\n    {\n      \"report_id\"\
+        : \"rpt_001\",\n      \"type\": \"incident_report\",\n      \"status\": \"\
+        completed\",\n      \"created_at\": \"2025-11-19T10:30:00Z\",\n      \"version\"\
+        : 1\n    }\n  ],\n  \"include_history\": false\n}\n```\n\n**Report Status\
+        \ Values**:\n- `pending`: Report generation queued\n- `generating`: Report\
+        \ being generated\n- `completed`: Report ready for download\n- `failed`: Generation\
+        \ failed\n\n**Storage**: SQLite query with version filtering\n**Rate Limits**:\
+        \ None (enforced at API Gateway level)\n**Authorization**: Requires X-User-ID\
+        \ header\n**User Isolation**: Only case owner can view reports"
+      operationId: get_case_reports_api_v1_cases__case_id__reports_get
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: include_history
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Include all report versions
+          default: false
+          title: Include History
+        description: Include all report versions
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Reports list returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Get Case Reports Api V1 Cases  Case Id  Reports Get
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to access reports
+        '404':
+          description: Case not found or access denied
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/{case_id}/reports/{report_id}/download:
+    get:
+      tags:
+      - cases
+      summary: Download case report
+      description: "Downloads a generated report in the specified format.\n\n**Workflow**:\n\
+        1. Validates case and report exist\n2. Generates report in requested format\n\
+        3. Returns file download response\n\n**Query Parameters**:\n- `format` (default:\
+        \ markdown): Output format (markdown or pdf)\n\n**Request Example**:\n```\n\
+        GET /api/v1/cases/case_abc123/reports/rpt_001/download?format=markdown\nHeaders:\n\
+        \  X-User-ID: user_123\n```\n\n**Response**:\n- Content-Type: text/markdown\
+        \ or application/pdf\n- Content-Disposition: attachment; filename=\"report.md\"\
+        \n\n**Supported Formats**:\n- `markdown`: Markdown text format (default)\n\
+        - `pdf`: PDF document (coming soon)\n\n**Storage**: SQLite with file content\
+        \ retrieval\n**Rate Limits**: None (enforced at API Gateway level)\n**Authorization**:\
+        \ Requires X-User-ID header\n**User Isolation**: Only case owner can download\
+        \ reports"
+      operationId: download_case_report_api_v1_cases__case_id__reports__report_id__download_get
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Report Id
+      - name: format
+        in: query
+        required: false
+        schema:
+          type: string
+          description: Output format (markdown or pdf)
+          default: markdown
+          title: Format
+        description: Output format (markdown or pdf)
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Report file returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Download Case Report Api V1 Cases  Case Id  Reports  Report
+                  Id  Download Get
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '403':
+          description: Forbidden - not authorized to download report
+        '404':
+          description: Case or report not found
+        '501':
+          description: PDF format not yet supported
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/reports:
+    get:
+      tags:
+      - cases
+      summary: List available reports
+      description: "Lists all available reports across the user's cases.\n\n**Workflow**:\n\
+        1. Retrieves all reports for user's cases\n2. Returns paginated list with\
+        \ metadata\n\n**Query Parameters**:\n- `limit` (default: 50, max: 100): Maximum\
+        \ reports to return\n\n**Request Example**:\n```\nGET /api/v1/cases/reports?limit=20\n\
+        Headers:\n  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n\
+        \  \"reports\": [\n    {\n      \"report_id\": \"rpt_001\",\n      \"case_id\"\
+        : \"case_abc123\",\n      \"type\": \"incident_report\",\n      \"status\"\
+        : \"completed\",\n      \"created_at\": \"2025-11-19T10:30:00Z\"\n    }\n\
+        \  ],\n  \"total\": 15\n}\n```\n\n**Storage**: SQLite query with user_id filter\n\
+        **Rate Limits**: None (enforced at API Gateway level)\n**Authorization**:\
+        \ Requires X-User-ID header\n**User Isolation**: Only shows user's own reports"
+      operationId: list_reports_api_v1_cases_reports_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Reports list returned successfully
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/reports/{report_id}:
+    get:
+      tags:
+      - cases
+      summary: Get specific report
+      description: "Retrieves a specific report by its ID.\n\n**Workflow**:\n1. Validates\
+        \ report exists and user has access\n2. Returns report metadata and content\n\
+        \n**Request Example**:\n```\nGET /api/v1/cases/reports/rpt_001\nHeaders:\n\
+        \  X-User-ID: user_123\n```\n\n**Response Example**:\n```json\n{\n  \"report_id\"\
+        : \"rpt_001\",\n  \"case_id\": \"case_abc123\",\n  \"type\": \"incident_report\"\
+        ,\n  \"title\": \"Redis Connection Timeout Incident\",\n  \"status\": \"completed\"\
+        ,\n  \"content\": \"# Incident Report\\n\\n## Summary...\",\n  \"created_at\"\
+        : \"2025-11-19T10:30:00Z\",\n  \"version\": 1\n}\n```\n\n**Storage**: SQLite\
+        \ query with user access validation\n**Rate Limits**: None (enforced at API\
+        \ Gateway level)\n**Authorization**: Requires X-User-ID header\n**User Isolation**:\
+        \ Only report owner can access"
+      operationId: get_report_api_v1_cases_reports__report_id__get
+      parameters:
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Report Id
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Report returned successfully
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '404':
+          description: Report not found or access denied
+        '501':
+          description: Feature not yet implemented
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/analytics/summary:
+    get:
+      tags:
+      - cases
+      summary: Get case analytics summary
+      description: "Returns aggregate analytics across all of the user's cases.\n\n\
+        **Workflow**:\n1. Aggregates metrics across user's cases\n2. Calculates summary\
+        \ statistics\n3. Returns analytics dashboard data\n\n**Request Example**:\n\
+        ```\nGET /api/v1/cases/analytics/summary\nHeaders:\n  X-User-ID: user_123\n\
+        ```\n\n**Response Example**:\n```json\n{\n  \"total_cases\": 25,\n  \"cases_by_status\"\
+        : {\n    \"active\": 5,\n    \"investigating\": 8,\n    \"resolved\": 10,\n\
+        \    \"closed\": 2\n  },\n  \"cases_by_severity\": {\n    \"critical\": 2,\n\
+        \    \"high\": 8,\n    \"medium\": 10,\n    \"low\": 5\n  },\n  \"average_resolution_time_hours\"\
+        : 4.5,\n  \"cases_this_week\": 3,\n  \"cases_this_month\": 12\n}\n```\n\n\
+        **Metrics Included**:\n- Total case count\n- Cases by status breakdown\n-\
+        \ Cases by severity breakdown\n- Average resolution time\n- Time-based case\
+        \ counts\n\n**Storage**: SQLite aggregation queries\n**Rate Limits**: None\
+        \ (enforced at API Gateway level)\n**Authorization**: Requires X-User-ID header\n\
+        **User Isolation**: Only aggregates user's own cases"
+      operationId: get_analytics_summary_api_v1_cases_analytics_summary_get
+      parameters:
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Analytics summary returned successfully
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/cases/analytics/trends:
+    get:
+      tags:
+      - cases
+      summary: Get case trends
+      description: "Returns case trends and patterns over a specified time period.\n\
+        \n**Workflow**:\n1. Analyzes case data over time period\n2. Calculates trends\
+        \ and patterns\n3. Returns time-series data\n\n**Query Parameters**:\n- `days`\
+        \ (default: 30, max: 365): Number of days to analyze\n\n**Request Example**:\n\
+        ```\nGET /api/v1/cases/analytics/trends?days=30\nHeaders:\n  X-User-ID: user_123\n\
+        ```\n\n**Response Example**:\n```json\n{\n  \"period_days\": 30,\n  \"trends\"\
+        : [\n    {\"date\": \"2025-11-01\", \"created\": 2, \"resolved\": 1},\n  \
+        \  {\"date\": \"2025-11-02\", \"created\": 3, \"resolved\": 2},\n    ...\n\
+        \  ],\n  \"summary\": {\n    \"total_created\": 25,\n    \"total_resolved\"\
+        : 20,\n    \"trend_direction\": \"improving\"\n  }\n}\n```\n\n**Trend Analysis**:\n\
+        - Daily case creation counts\n- Daily resolution counts\n- Moving averages\n\
+        - Trend direction indicators\n\n**Storage**: SQLite time-series aggregation\n\
+        **Rate Limits**: None (enforced at API Gateway level)\n**Authorization**:\
+        \ Requires X-User-ID header\n**User Isolation**: Only analyzes user's own\
+        \ cases"
+      operationId: get_case_trends_api_v1_cases_analytics_trends_get
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 365
+          minimum: 1
+          default: 30
+          title: Days
+      - name: X-User-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-User-Id
+      responses:
+        '200':
+          description: Trends data returned successfully
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Unauthorized - missing X-User-ID header
+        '500':
+          description: Internal server error
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /health:
     get:
       summary: Health Check
-      description: Health check endpoint.
+      description: "Returns the health status of the Case Service.\n\n**Workflow**:\n\
+        1. Checks service availability\n2. Reports database connection type\n3. Returns\
+        \ service metadata\n\n**Response Example**:\n```json\n{\n  \"status\": \"\
+        healthy\",\n  \"service\": \"fm-case-service\",\n  \"version\": \"1.0.0\"\
+        ,\n  \"database\": \"sqlite+aiosqlite\"\n}\n```\n\n**Use Cases**:\n- Kubernetes\
+        \ liveness/readiness probes\n- Load balancer health checks\n- Service mesh\
+        \ health monitoring\n- Docker Compose healthcheck\n\n**Storage**: No database\
+        \ query (reports connection type only)\n**Rate Limits**: None\n**Authorization**:\
+        \ None required (public endpoint)"
       operationId: health_check_health_get
       responses:
         '200':
-          description: Successful Response
+          description: Service is healthy and operational
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+        '500':
+          description: Service is unhealthy or experiencing issues
 components:
   schemas:
-    CaseCategory:
-      type: string
-      enum:
-      - performance
-      - error
-      - configuration
-      - infrastructure
-      - security
-      - other
-      title: CaseCategory
-      description: Case categories.
     CaseCreateRequest:
       properties:
         title:
@@ -499,26 +2065,12 @@ components:
           - type: 'null'
           title: Description
           default: ''
-        session_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Session Id
-        severity:
-          $ref: '#/components/schemas/CaseSeverity'
+        priority:
+          $ref: '#/components/schemas/CasePriority'
           default: medium
-        category:
-          $ref: '#/components/schemas/CaseCategory'
-          default: other
         metadata:
-          additionalProperties: true
           type: object
           title: Metadata
-        tags:
-          items:
-            type: string
-          type: array
-          title: Tags
       type: object
       title: CaseCreateRequest
       description: Request to create a new case.
@@ -546,19 +2098,29 @@ components:
       - page_size
       title: CaseListResponse
       description: Response containing a list of cases.
+    CasePriority:
+      type: string
+      enum:
+      - low
+      - medium
+      - high
+      - critical
+      title: CasePriority
+      description: Case priority levels.
     CaseResponse:
       properties:
         case_id:
           type: string
           title: Case Id
+        owner_id:
+          type: string
+          title: Owner Id
         user_id:
           type: string
           title: User Id
-        session_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Session Id
+        organization_id:
+          type: string
+          title: Organization Id
         title:
           type: string
           title: Title
@@ -568,21 +2130,14 @@ components:
         status:
           type: string
           title: Status
-        severity:
-          type: string
-          title: Severity
-        category:
-          type: string
-          title: Category
+        priority:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Priority
         metadata:
-          additionalProperties: true
           type: object
           title: Metadata
-        tags:
-          items:
-            type: string
-          type: array
-          title: Tags
         created_at:
           type: string
           format: date-time
@@ -597,42 +2152,37 @@ components:
             format: date-time
           - type: 'null'
           title: Resolved At
+        message_count:
+          type: integer
+          title: Message Count
+          default: 0
       type: object
       required:
       - case_id
+      - owner_id
       - user_id
-      - session_id
+      - organization_id
       - title
       - description
       - status
-      - severity
-      - category
       - metadata
-      - tags
       - created_at
       - updated_at
       - resolved_at
       title: CaseResponse
       description: Response containing a single case.
-    CaseSeverity:
-      type: string
-      enum:
-      - low
-      - medium
-      - high
-      - critical
-      title: CaseSeverity
-      description: Case severity levels.
     CaseStatus:
       type: string
       enum:
-      - active
+      - consulting
       - investigating
       - resolved
-      - archived
       - closed
       title: CaseStatus
-      description: Case lifecycle status.
+      description: "Case lifecycle status.\n\nLifecycle Flow:\n  CONSULTING \u2192\
+        \ INVESTIGATING \u2192 RESOLVED (terminal)\n                             \u2192\
+        \ CLOSED (terminal)\n           \u2198 CLOSED (terminal)\n\nTerminal States:\
+        \ RESOLVED, CLOSED (no further transitions)"
     CaseStatusUpdateRequest:
       properties:
         status:
@@ -659,27 +2209,15 @@ components:
           anyOf:
           - $ref: '#/components/schemas/CaseStatus'
           - type: 'null'
-        severity:
+        priority:
           anyOf:
-          - $ref: '#/components/schemas/CaseSeverity'
-          - type: 'null'
-        category:
-          anyOf:
-          - $ref: '#/components/schemas/CaseCategory'
+          - $ref: '#/components/schemas/CasePriority'
           - type: 'null'
         metadata:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Metadata
-        tags:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          title: Tags
       type: object
       title: CaseUpdateRequest
       description: Request to update a case.

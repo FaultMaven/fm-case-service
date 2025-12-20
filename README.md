@@ -1,6 +1,6 @@
 # fm-case-service
 
-> **Auto-generated API docs** | Last updated: **2025-12-15 05:48 UTC** | Endpoints: **8**
+> **Auto-generated API docs** | Last updated: **2025-12-20 11:04 UTC** | Endpoints: **34**
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://hub.docker.com/r/faultmaven/fm-case-service)
@@ -63,25 +63,53 @@ The service creates a SQLite database at `./fm_cases.db` on first run.
 | GET | `/health` | Health Check |
 | POST | `/api/v1/cases` | Create new troubleshooting case |
 | GET | `/api/v1/cases` | List user's cases with pagination |
+| GET | `/api/v1/cases/analytics/summary` | Get case analytics summary |
+| GET | `/api/v1/cases/analytics/trends` | Get case trends |
+| GET | `/api/v1/cases/health` | Get case service health |
+| GET | `/api/v1/cases/reports` | List available reports |
+| GET | `/api/v1/cases/reports/{report_id}` | Get specific report |
+| POST | `/api/v1/cases/search` | Search cases |
 | GET | `/api/v1/cases/session/{session_id}` | Get cases linked to a session |
 | GET | `/api/v1/cases/{case_id}` | Get case by ID |
 | PUT | `/api/v1/cases/{case_id}` | Update case details |
 | DELETE | `/api/v1/cases/{case_id}` | Delete case permanently |
+| GET | `/api/v1/cases/{case_id}/analytics` | Get case analytics |
+| POST | `/api/v1/cases/{case_id}/close` | Close a case |
+| GET | `/api/v1/cases/{case_id}/data` | List case data |
+| POST | `/api/v1/cases/{case_id}/data` | Add evidence/data to case |
+| GET | `/api/v1/cases/{case_id}/data/{data_id}` | Get case data |
+| DELETE | `/api/v1/cases/{case_id}/data/{data_id}` | Delete case data |
+| GET | `/api/v1/cases/{case_id}/evidence/{evidence_id}` | Get specific evidence by ID |
+| POST | `/api/v1/cases/{case_id}/hypotheses` | Add hypothesis to case |
+| PUT | `/api/v1/cases/{case_id}/hypotheses/{hypothesis_id}` | Update hypothesis |
+| GET | `/api/v1/cases/{case_id}/messages` | Get case messages |
+| POST | `/api/v1/cases/{case_id}/queries` | Submit case query |
+| GET | `/api/v1/cases/{case_id}/queries` | Get case query history |
+| GET | `/api/v1/cases/{case_id}/report-recommendations` | Get report recommendations |
+| POST | `/api/v1/cases/{case_id}/reports` | Generate case reports |
+| GET | `/api/v1/cases/{case_id}/reports` | Get case reports |
+| GET | `/api/v1/cases/{case_id}/reports/{report_id}/download` | Download case report |
 | POST | `/api/v1/cases/{case_id}/status` | Update case status |
+| POST | `/api/v1/cases/{case_id}/title` | Generate case title |
+| GET | `/api/v1/cases/{case_id}/ui` | Get case UI data |
+| GET | `/api/v1/cases/{case_id}/uploaded-files` | Get uploaded files for case |
+| GET | `/api/v1/cases/{case_id}/uploaded-files/{file_id}` | Get uploaded file details |
 
 
 **OpenAPI Documentation**: See [docs/api/openapi.json](docs/api/openapi.json) or [docs/api/openapi.yaml](docs/api/openapi.yaml) for complete API specification.
 
 ## Common Response Codes
 
-- **200**: Case found and returned successfully
+- **200**: Case status updated successfully
 - **201**: Case created successfully
 - **204**: Case deleted successfully (no content returned)
-- **400**: Invalid status value
-- **401**: Unauthorized - missing or invalid X-User-ID header
-- **404**: Case not found or access denied (returns 404 to prevent enumeration)
+- **400**: Invalid request - at least one report type required
+- **401**: Unauthorized - missing X-User-ID header
+- **403**: Forbidden - not authorized to access this case
+- **404**: Report not found or access denied
 - **422**: Validation Error
-- **500**: Internal server error
+- **500**: Internal server error - database operation failed
+- **501**: Feature not yet implemented
 
 
 ## Configuration
@@ -299,8 +327,8 @@ Contributions welcome! Please:
 ---
 
 **Documentation Statistics**
-- Total endpoints: 8
-- Last generated: 2025-12-15 05:48 UTC
+- Total endpoints: 34
+- Last generated: 2025-12-20 11:04 UTC
 - OpenAPI spec version: 1.0.0
 - Generator: scripts/generate_readme.py
 - Template: README_TEMPLATE.md

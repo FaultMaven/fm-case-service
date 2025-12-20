@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from case_service.config import settings
 from case_service.infrastructure.database import db_client
 from case_service.api.routes.cases import router as cases_router
+from case_service.api.routes.schema import router as schema_router
 from case_service.models import HealthResponse
 
 # Configure logging
@@ -42,6 +43,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(cases_router)
+app.include_router(schema_router)
 
 
 @app.on_event("startup")
